@@ -1,0 +1,38 @@
+import os
+from dataclasses import dataclass, field
+from dotenv import load_dotenv
+
+load_dotenv()
+
+
+def _list(name: str, default: str) -> list[str]:
+    return [x.strip() for x in os.getenv(name, default).split(",") if x.strip()]
+
+
+@dataclass
+class Settings:
+    gnani_api_key: str = os.getenv("GNANI_API_KEY", "")
+    llm_api_key: str = os.getenv("LLM_API_KEY", "")
+    llm_base_url: str = os.getenv("LLM_BASE_URL", "https://generativelanguage.googleapis.com/v1beta/openai/")
+    llm_model: str = os.getenv("LLM_MODEL", "gemini-2.5-flash")
+    driver_bot_token: str = os.getenv("DRIVER_BOT_TOKEN", "")
+    owner_bot_token: str = os.getenv("OWNER_BOT_TOKEN", "")
+    google_maps_key: str = os.getenv("GOOGLE_MAPS_API_KEY", "")
+    public_base_url: str = os.getenv("PUBLIC_BASE_URL", "http://localhost:8080").rstrip("/")
+    http_port: int = int(os.getenv("HTTP_PORT", "8080"))
+    n8n_webhook_url: str = os.getenv("N8N_WEBHOOK_URL", "")
+    api_shared_secret: str = os.getenv("API_SHARED_SECRET", "change_me")
+    stt_model: str = os.getenv("STT_MODEL", "prisma-v3.0")
+    stt_lang_candidates: list[str] = field(default_factory=lambda: _list("STT_LANG_CANDIDATES", "hi-IN,en-IN"))
+    tts_model: str = os.getenv("TTS_MODEL", "timbre-v2.5")
+    tts_voice: str = os.getenv("TTS_VOICE", "Poorvi")
+    tts_language: str = os.getenv("TTS_LANGUAGE", "hi-IN")
+    speech_mode: str = os.getenv("SPEECH_MODE", "gnani")
+    db_path: str = os.getenv("DB_PATH", "data/saarthi.db")
+    # Safety / behaviour
+    fatigue_interval_min: int = int(os.getenv("FATIGUE_INTERVAL_MIN", "120"))
+    mesh_radius_km: float = float(os.getenv("MESH_RADIUS_KM", "25"))
+    moving_speed_kmph: float = float(os.getenv("MOVING_SPEED_KMPH", "8"))
+
+
+settings = Settings()

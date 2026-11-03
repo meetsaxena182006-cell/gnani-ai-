@@ -1,0 +1,10 @@
+.env
+.venv/
+__pycache__/
+*.pyc
+data/*.db
+data/audio/
+eval/recordings/*
+!eval/recordings/.gitkeep
+eval/results/
+.pytest_cache/

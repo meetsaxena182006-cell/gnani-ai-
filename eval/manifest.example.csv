@@ -1,0 +1,5 @@
+file,condition,reference,amounts
+d1_pump_01.ogg,fuel_pump,"bhaiya chaar hazaar paanch sau ka diesel daala adtalis litre",4500|48
+d1_cab_02.ogg,cab_moving,"toll pe teen sau diye",300
+d2_highway_01.ogg,highway_roadside,"tyre phat gaya NH48 pe Debari ke paas",48
+d3_phone_01.ogg,phone_speaker,"bhaada ka advance das hazaar mila",10000
