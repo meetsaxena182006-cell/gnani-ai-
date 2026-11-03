@@ -1,64 +1,38 @@
-# Saarthi — agentic voice operations for small fleets
+# Saarthi — a live voice companion for every truck, an AI CEO for every fleet
 
-**What it is:** every truck gets a **Driver Agent** the driver talks to in Hindi, Hinglish or a regional language. The office gets a **CEO Agent** that oversees all the trucks, keeps the owner updated, and hands anything serious straight to the owner.
-**Gnani models:** Prisma v3.0 (speech-to-text) for every voice note, and Timbre v2.5 (text-to-speech) for every spoken reply and alert.
+**Gnani models:** Prisma v3.0 (speech-to-text: auto language detection, keyterms, number normalisation) and Timbre v2.5 (text-to-speech, a voice for each language).
+
+## The idea
+- **Driver Agent = a companion living on the driver's phone.** The phone sits in a holder on the dashboard. The companion is always on and hands-free: the driver never touches the phone and simply talks. It chats like a friend, checks in every 1–2 hours ("Ram Ram boss, sab theek? tabiyat badhiya?"), keeps the driver alert, logs money, and handles breakdowns.
+- **Fleet Mesh.** When a truck is in trouble, its companion asks every Saarthi companion on the same road. Each nearby companion asks its own driver: "aage ek truck mushkil mein hai, madad kar sakte hain?" The first driver to say *haan* is matched, everyone else hears "madad mil gayi", and when the problem is solved everyone is told.
+- **CEO Agent = always live on the server.** The owner can reach it through the laptop dashboard (`/office`) or Telegram voice notes. It receives every driver event, keeps the owner updated, hands emergencies straight to the owner, and gives precise deal costing (freight − diesel − driver − tolls − maintenance = profit).
 
 ```
- Driver phone (Telegram)            Office / owner phone (Telegram)
-   voice note / location               voice or text
-          |                                   |
-   [Prisma STT] ─────┐               ┌───── [Prisma STT]
-                     v               v
-             DRIVER AGENT  ──event──> CEO AGENT ──escalate──> OWNER (voice alert + call button)
-             (one per truck)  <─task──  (one per fleet)
-                 |   ^                     |
-                 |   └── MESH: nearby Driver Agents of other opted-in fleets (peer help)
-                 v                         v
-   tools: expenses · freight · breakdown · tools: fleet status · P&L · freight quote ·
-   mechanics nearby · weather · route ·          documents expiry · tracking link ·
-   fatigue check · emergency 112 · location      daily digest (n8n -> Sheets)
-                 |
-           [Timbre TTS] -> voice reply to driver
+Phone in dashboard holder (web app; screen kept awake)          Owner laptop /office · Telegram voice notes
+  mic+speaker ⇄ WebRTC ⇄ [VAD → Prisma → Guard → LLM+tools → Timbre]  ⇄  CEO Agent (server)
+  GPS over data channel ─────────────────────────┘        │
+                         Fleet Mesh ⇄ other trucks' companions on the same road
 ```
 
-## Your plan mapped to the build
+## How "always on, no touching" works
+| Need | Implementation |
+|---|---|
+| Always listening without burning credits | Silero voice-activity detection on the server cuts out speech segments, and **only speech** goes to Prisma (REST, under 30 s per segment). |
+| Doesn't interrupt family phone calls or chats with the helper | The guard responds only when addressed ("Saarthi …"), during an open conversation (90 s), or when emergency/breakdown words are heard. |
+| Talks first, every 1–2 hours | Check-in scheduler (`FATIGUE_INTERVAL_MIN`, default 90). Two unanswered check-ins alert the owner. |
+| Many languages | Prisma `indic-auto` detects the language → the companion answers in it → Timbre switches to that language's voice. Covers Hindi, Punjabi, Gujarati, Marathi, Bengali, Tamil, Telugu, Kannada, Malayalam and English. **Marwari/Mewari is not a Prisma language:** it is recognised as Hindi with Rajasthani keyterms, and the companion replies in simple Hindi with a Rajasthani touch. |
+| Calls the nearest help | A breakdown triggers a nearby mechanic lookup → "Unko call lagaun?" → *haan* → the phone dials. Only numbers that came from a lookup (or 112/108/1033) can be dialled. The web app opens the dialer pre-filled; one tap is needed until the Android wrapper is built. |
+| Emergency | Rule-based: the owner is alerted immediately, and the driver is asked "112 lagaun?". The AI never talks to emergency services. |
+| Money | The amount is read back, and the guard saves it only after *haan*. The LLM never does the arithmetic. |
+| Weak highway network | Auto-reconnect with backoff. TTS uses per-reply HTTP streaming (SSE), so a network drop doesn't silence the companion. A TURN server is configurable for mobile networks. |
+| Reasoning LLM | Ordered failover: `LLM_*` (e.g. a Gnani-provided LLM or self-hosted Evon), then `LLM2_*` (Gemini/Groq). |
 
-| Your feature | How it works | Data source (free) |
-|---|---|---|
-| Handle driver calls | Driver sends Telegram voice notes; the agent replies by voice. A live call mode is a stretch goal. | Prisma + Timbre |
-| Freight + cost logging | The LLM extracts the amount and the agent **reads it back for confirmation** before saving | SQLite |
-| Sudden breakdown | Classify the problem → alert the CEO Agent → find the nearest mechanic or tyre shop → tap-to-call → update the owner | OpenStreetMap Overpass |
-| Help from another fleet's agent | **Fleet Mesh**: find opted-in trucks within 25 km, ask that driver by voice, relay messages without sharing phone numbers | own DB |
-| Keep the driver awake | Fatigue check-ins every 2 h and at night (yes/no only); two missed check-ins alert the owner | scheduler |
-| Better route + traffic | Route + alternatives; traffic only if a Google key is set (otherwise stated honestly as "no traffic data") | OSRM / Google Routes (optional) |
-| Weather analysis | Weather sampled along the route; warnings for rain, fog, heat | Open-Meteo |
-| Location | Telegram live location, with a client tracking link on a map page — **no GPS hardware** | Telegram + Leaflet/OSM |
-| Documentation expiry | Track insurance, permit, fitness, PUC and licence dates; the CEO Agent warns 30, 7 and 1 day before expiry | SQLite + n8n cron |
-| CEO Agent keeps the owner updated | Routine updates go into a daily digest; important events trigger an immediate voice + text alert | Timbre |
-| Hand over to the owner | **Rule-based**, not LLM-guessed: accident or injury → driver gets a 112 button + owner gets an alert immediately | code |
-| Deal costing | **Deterministic engine**: diesel + tolls + driver pay + maintenance + empty return leg → break-even, quote, profit | code (LLM only explains the numbers) |
+## Done (tested offline: 23 tests, plus a WebRTC end-to-end smoke test)
+Live companion pipeline · phone web app · Fleet Mesh with voice consent and solved/closed broadcasts · CEO Agent · office dashboard with map/satellite toggle · Telegram for owner voice notes · deterministic cost engine · fatigue check-ins · client tracking link · n8n workflows · Prisma accuracy harness.
 
-## Safety and honesty rules (built into the code)
-- Numbers are always confirmed by the driver before saving, and money maths is never done by the LLM.
-- While the truck is moving the agent gives short prompts and asks yes/no questions only; longer conversations happen when parked.
-- For emergencies the driver is connected to 112 directly. The AI never talks to emergency services.
-- Only synthetic fleets, numbers and plates appear in the demo and the repo (see RULES.md).
-
-## Build order (cut from the bottom if time runs short)
-1. **Core:** voice → Prisma → Driver Agent → confirmation → Timbre reply; expenses and freight. *Must have.*
-2. **Breakdown:** mechanics nearby + owner escalation + 112. *Must have.*
-3. **CEO Agent:** owner Q&A, freight quote / P&L, daily digest. *Must have.*
-4. **Accuracy evaluation:** WER and amount accuracy per noise condition, with and without keyterms. *Must have.*
-5. Location + client tracking link.
-6. Fleet Mesh peer help.
-7. Documents expiry + n8n digest to Sheets.
-8. Weather / route.
-9. Fatigue check-ins.
-
-## Schedule
-- Nov 3–4: steps 1–4 code complete; first driver test; Post 1.
-- Nov 5–6: steps 5–9; pilot with 3–5 drivers.
-- Nov 7: Post 2 (real driver clip); fix failures.
-- Nov 8: accuracy runs on consented recordings; pilot numbers.
-- Nov 9: video + Post 3; repo made public.
-- Nov 10: submit early.
+## Next (in order)
+1. **On the laptop with real keys:** test Prisma/Timbre quality and latency, check credit cost per minute, and choose the voices.
+2. Test the phone on Jio/Airtel 4G on a highway; add a TURN server if WebRTC fails behind mobile NAT.
+3. Pilot with 3–5 drivers who consent; record the accuracy evaluation per noise condition.
+4. Make the posts and the 60-second video (diesel log → tyre burst → mesh help → owner alert → solved).
+5. Stretch goal: an Android wrapper (foreground service, screen-off listening, direct dialing).

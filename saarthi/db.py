@@ -21,7 +21,7 @@ CREATE TABLE IF NOT EXISTS vehicles (
   mileage_loaded REAL DEFAULT 3.5, mileage_empty REAL DEFAULT 4.5,
   driver_name TEXT, driver_chat_id INTEGER, lang TEXT DEFAULT 'hi-IN',
   last_lat REAL, last_lon REAL, last_speed_kmph REAL, last_seen TEXT,
-  driving_since TEXT, last_fatigue_ack TEXT, missed_checks INTEGER DEFAULT 0
+  driving_since TEXT, last_fatigue_ack TEXT, missed_checks INTEGER DEFAULT 0, access_token TEXT
 );
 CREATE TABLE IF NOT EXISTS trips (
   id INTEGER PRIMARY KEY, vehicle_id INTEGER NOT NULL REFERENCES vehicles(id),
@@ -42,7 +42,7 @@ CREATE TABLE IF NOT EXISTS documents (
 );
 CREATE TABLE IF NOT EXISTS mesh_requests (
   id INTEGER PRIMARY KEY, requester_vehicle INTEGER NOT NULL, helper_vehicle INTEGER,
-  need TEXT, lat REAL, lon REAL, status TEXT DEFAULT 'open', created_at TEXT
+  need TEXT, lat REAL, lon REAL, status TEXT DEFAULT 'open', created_at TEXT, asked TEXT
 );
 CREATE TABLE IF NOT EXISTS agent_log (
   id INTEGER PRIMARY KEY, ts TEXT, from_agent TEXT, to_agent TEXT, kind TEXT, payload TEXT
@@ -65,7 +65,26 @@ def conn() -> sqlite3.Connection:
         _conn = sqlite3.connect(settings.db_path, check_same_thread=False)
         _conn.row_factory = sqlite3.Row
         _conn.executescript(SCHEMA)
+        _migrate(_conn)
     return _conn
+
+
+def _migrate(c: sqlite3.Connection) -> None:
+    """Add columns introduced after a DB was first created."""
+    wanted = {"vehicles": {"access_token": "TEXT"}, "mesh_requests": {"asked": "TEXT"}}
+    for table, cols in wanted.items():
+        have = {r[1] for r in c.execute(f"PRAGMA table_info({table})")}
+        for col, typ in cols.items():
+            if col not in have:
+                c.execute(f"ALTER TABLE {table} ADD COLUMN {col} {typ}")
+    c.commit()
+
+
+def vehicle_by_token(code: str, token: str) -> dict | None:
+    v = vehicle_by_code(code)
+    if v and v.get("access_token") and secrets.compare_digest(v["access_token"], token or ""):
+        return v
+    return None
 
 
 def reset(path: str | None = None) -> None:

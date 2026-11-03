@@ -1,5 +1,15 @@
-"""Driver Agent: one per truck. The driver talks (voice note -> Prisma); the agent acts with
-tools and answers by voice (Timbre). Money is ALWAYS read back and confirmed before saving."""
+"""Driver Agent: one per truck, a talkative companion that lives on the driver's phone.
+
+Works in two modes with the same tools and rules:
+- LIVE voice (companion.py): always-on, hands-free, phone locked on the dashboard stand.
+- Text/voice-note fallback (Telegram), mainly for testing.
+
+Deterministic rules (never left to the LLM):
+- money is read back and saved only after "haan";
+- yes/no answers to the companion's own questions (confirm entry, call mechanic/112, help another truck,
+  alertness check) are handled in code;
+- only phone numbers that came from a real lookup (or 112/108/1033) can be dialled.
+"""
 from __future__ import annotations
 
 import logging
@@ -7,9 +17,10 @@ import re
 from datetime import date, datetime, timedelta, timezone
 
 from .. import db, geo
-from ..bus import Out, bus
+from ..bus import bus, to_driver
 from ..llm import Memory, Tool, params, run_agent
 from ..safety import EMERGENCY_NUMBERS, final_severity, is_moving, yes_no
+from ..state import ask, dialable, open_question, questions
 from . import ceo, mesh
 from .common import CATEGORY_HI, EXPENSE_CATEGORIES, INCOME_CATEGORIES, inr
 
@@ -17,8 +28,7 @@ log = logging.getLogger("saarthi.driver")
 memory = Memory()
 PENDING_TTL_MIN = 15
 
-
-# ---------------- confirmation flow (deterministic) ----------------
+# ---------------- confirmation flow ----------------
 def pending_entries(vid: int) -> list[dict]:
     cutoff = (datetime.now(timezone.utc) - timedelta(minutes=PENDING_TTL_MIN)).isoformat(timespec="seconds")
     db.ex("UPDATE expenses SET status='expired' WHERE vehicle_id=? AND status='pending' AND created_at<?", (vid, cutoff))
@@ -35,8 +45,7 @@ def describe(e: dict) -> str:
 
 
 def confirm_prompt(entries: list[dict]) -> str:
-    items = "; ".join(describe(e) for e in entries)
-    return f"{items} — sahi hai? Haan ya nahi boliye."
+    return "; ".join(describe(e) for e in entries) + " — sahi hai? Haan ya nahi boliye."
 
 
 async def confirm_all(v: dict) -> str:
@@ -60,14 +69,50 @@ def cancel_all(v: dict) -> None:
     db.ex("UPDATE expenses SET status='cancelled' WHERE vehicle_id=? AND status='pending'", (v["id"],))
 
 
+def dial_action(phone: str, name: str) -> dict:
+    return {"type": "dial", "phone": phone, "name": name}
+
+
+async def intercept(v: dict, text: str) -> str | None:
+    """Handle replies to the companion's own questions in code. Returns the reply, or None
+    if the utterance should go to the LLM."""
+    vid = v["id"]
+    yn = yes_no(text)
+    pend = pending_entries(vid)
+    if pend:
+        if yn is True:
+            return await confirm_all(v)
+        if yn is False and not re.search(r"\d", text):
+            cancel_all(v)
+            return "Theek hai, cancel kar diya. Sahi amount dobara boliye."
+        cancel_all(v)  # a correction or something else: start over cleanly, let the LLM re-log
+        return None
+    q = open_question(vid)
+    if q and yn is not None:
+        questions.pop(vid, None)
+        if q["kind"] == "dial":
+            if yn:
+                await bus.send(to_driver(v, f"📞 Calling {q['name']} {q['phone']}", actions=[dial_action(q["phone"], q["name"])],
+                                         contacts=[(q["name"], q["phone"])]))
+                return f"{q['name']} ko call laga raha hoon."
+            return "Theek hai, call nahi kar raha. Kuch aur chahiye to boliye."
+        if q["kind"] == "mesh":
+            return await mesh.respond(v, q["request_id"], yn)
+    from ..fatigue import ack_if_pending
+    if yn is True and ack_if_pending(vid):
+        return "Bahut badhiya, boss. Dhyan se chalaiye, paani peete rahiye."
+    return None
+
+
 # ---------------- tools ----------------
 class Turn:
-    def __init__(self) -> None:
+    def __init__(self, transcript: str = "") -> None:
+        self.transcript = transcript
         self.new_pending = False
         self.final_override: str | None = None
 
 
-def make_tools(vid: int, turn: Turn, transcript: str) -> list[Tool]:
+def make_tools(vid: int, turn: Turn) -> list[Tool]:
     def v() -> dict:
         return db.vehicle(vid)
 
@@ -85,9 +130,9 @@ def make_tools(vid: int, turn: Turn, transcript: str) -> list[Tool]:
         db.ex("INSERT INTO expenses(vehicle_id,trip_id,category,amount,litres,note,lat,lon,status,transcript,created_at)"
               " VALUES(?,?,?,?,?,?,?,?, 'pending', ?, ?)",
               (vid, t["id"] if t else None, category, float(amount), litres, note,
-               l[0] if l else None, l[1] if l else None, transcript, db.now()))
+               l[0] if l else None, l[1] if l else None, turn.transcript, db.now()))
         turn.new_pending = True
-        return {"status": "pending_confirmation", "will_be_read_back": True}
+        return {"status": "pending_confirmation", "say": confirm_prompt(pending_entries(vid))}
 
     async def start_trip(origin: str, destination: str, freight_amount: float | None = None, client: str | None = None):
         t = db.start_trip(vid, origin, destination, freight_amount, client)
@@ -113,50 +158,82 @@ def make_tools(vid: int, turn: Turn, transcript: str) -> list[Tool]:
 
     async def report_breakdown(problem: str, severity: str = "high"):
         x = v()
-        sev = final_severity(severity, problem + " " + transcript)
+        sev = final_severity(severity, problem + " " + turn.transcript)
         l = loc()
         iid = db.ex("INSERT INTO incidents(vehicle_id,kind,severity,description,lat,lon,created_at) VALUES(?,?,?,?,?,?,?)",
                     (vid, "emergency" if sev == "critical" else "breakdown", sev, problem,
                      l[0] if l else None, l[1] if l else None, db.now()))
         maps = geo.maps_link(*l) if l else None
         if sev == "critical":
-            await bus.send(Out(chat_id=x["driver_chat_id"],
-                               text="🚨 Turant 112 pe call karein (police/ambulance). Neeche number dabaiye.",
-                               contacts=EMERGENCY_NUMBERS[:2]))
+            dialable.setdefault(vid, {}).update({p: n for n, p in EMERGENCY_NUMBERS})
+            ask(vid, "dial", name="Emergency 112", phone="112")
+            await bus.send(to_driver(x, "🚨 Emergency: 112 (police/ambulance)", contacts=EMERGENCY_NUMBERS[:2]))
             await ceo.on_event(vid, "emergency", {"description": problem, "maps": maps, "latlon": l, "incident": iid})
-            turn.final_override = "Abhi 112 pe call kariye. Maine malik ko turant bata diya hai. Aap surakshit jagah par rahiye."
-            return {"severity": "critical", "action": "112 shown to driver, owner alerted"}
+            say = "Malik ko turant bata diya hai. Abhi 112 lagaun? Haan boliye."
+            turn.final_override = say
+            return {"severity": "critical", "say": say}
         help_list: list[dict] = []
         if l:
-            kind = "tyre" if re.search(r"tyre|tair|puncture|pancture|phat|burst", (problem + transcript).lower()) else "mechanic"
+            kind = "tyre" if re.search(r"tyre|tair|puncture|pancture|phat|burst", (problem + turn.transcript).lower()) else "mechanic"
             try:
                 help_list = await geo.nearby(kind, l[0], l[1])
             except Exception as e:
                 log.warning("nearby search failed: %s", e)
         await ceo.on_event(vid, "breakdown", {"description": problem, "maps": maps, "latlon": l, "help": help_list})
+        with_phone = [h for h in help_list if h.get("phone")]
         if help_list:
-            with_phone = [(h["name"], h["phone"]) for h in help_list if h.get("phone")][:3]
             lines = "\n".join(f"• {h['name']} — {h['distance_km']} km — {h['maps']}" for h in help_list[:3])
-            await bus.send(Out(chat_id=x["driver_chat_id"], text=f"🔧 Nazdeeki madad:\n{lines}", contacts=with_phone,
-                               location=(help_list[0]["lat"], help_list[0]["lon"])))
+            await bus.send(to_driver(x, f"🔧 Nazdeeki madad:\n{lines}", contacts=[(h["name"], h["phone"]) for h in with_phone[:3]],
+                                     location=(help_list[0]["lat"], help_list[0]["lon"])))
         peer = None
-        if l and not any(h.get("phone") for h in help_list):
+        if l:
+            # like a human: ask nearby Saarthi trucks on the same road at the same time
             peer = await mesh.request_help(x, problem)
-        return {"severity": sev, "owner_alerted": True, "location_known": bool(l),
-                "nearest_help": [{"name": h["name"], "km": h["distance_km"], "has_phone": bool(h.get("phone"))} for h in help_list[:3]],
-                "peer_help": peer,
-                "instruction": None if l else "Ask the driver to share live location (📎 → Location)."}
+        if with_phone:
+            h = with_phone[0]
+            dialable.setdefault(vid, {})[h["phone"]] = h["name"]
+            ask(vid, "dial", name=h["name"], phone=h["phone"])
+            say = (f"Malik ko bata diya. {h['name']} {h['distance_km']} kilometre door hai. Unko call lagaun? Haan boliye.")
+        elif l:
+            say = "Malik ko bata diya hai, aur paas ke trucks se madad maang raha hoon. Gaadi side mein lagaiye, indicator chalu rakhiye."
+        else:
+            say = "Malik ko bata diya hai. Location chalu kariye taaki madad bhej sakoon."
+        turn.final_override = say
+        return {"severity": sev, "say": say, "peer_help": peer,
+                "nearest_help": [{"name": h["name"], "km": h["distance_km"]} for h in help_list[:3]]}
+
+    async def call_number(phone: str):
+        """Dial only numbers from a real lookup or the emergency list."""
+        allowed = {**{p: n for n, p in EMERGENCY_NUMBERS}, **dialable.get(vid, {})}
+        phone = re.sub(r"[^\d+]", "", phone or "")
+        if phone not in allowed:
+            return {"error": "This number did not come from a lookup; do not dial unknown numbers. Use find_help first."}
+        await bus.send(to_driver(v(), f"📞 Calling {allowed[phone]} {phone}", actions=[dial_action(phone, allowed[phone])],
+                                 contacts=[(allowed[phone], phone)]))
+        return {"dialing": allowed[phone]}
+
+    async def problem_solved():
+        x = v()
+        db.ex("UPDATE incidents SET status='resolved', resolved_at=? WHERE vehicle_id=? AND status='open'", (db.now(), vid))
+        await mesh.close_requests(x, reason="solved")
+        f = db.fleet(x["fleet_id"])
+        o = ceo.owner_out(f, f"✅ {x['driver_name'] or 'Driver'} ({x['reg_label']}): problem solved, back on the road.")
+        if o:
+            await bus.send(o)
+        return {"resolved": True}
 
     async def find_help(kind: str):
         l = loc()
         if not l:
-            return {"error": "no location; ask driver to share live location"}
+            return {"error": "no location; ask driver to keep location on"}
         res = await geo.nearby(kind, l[0], l[1])
+        for h in res:
+            if h.get("phone"):
+                dialable.setdefault(vid, {})[h["phone"]] = h["name"]
         if res:
-            await bus.send(Out(chat_id=v()["driver_chat_id"],
-                               text="\n".join(f"• {h['name']} — {h['distance_km']} km — {h['maps']}" for h in res[:3]),
-                               contacts=[(h["name"], h["phone"]) for h in res if h.get("phone")][:3]))
-        return {"results": [{"name": h["name"], "km": h["distance_km"]} for h in res[:3]]}
+            await bus.send(to_driver(v(), "\n".join(f"• {h['name']} — {h['distance_km']} km — {h['maps']}" for h in res[:3]),
+                                     contacts=[(h["name"], h["phone"]) for h in res if h.get("phone")][:3]))
+        return {"results": [{"name": h["name"], "km": h["distance_km"], "phone": h.get("phone")} for h in res[:3]]}
 
     async def request_peer_help(need: str):
         return await mesh.request_help(v(), need)
@@ -214,10 +291,14 @@ def make_tools(vid: int, turn: Turn, transcript: str) -> list[Tool]:
              "severity: low (minor), high (vehicle stopped), critical (accident/injury/fire/robbery).",
              params({"problem": s, "severity": {"type": "string", "enum": ["low", "high", "critical"]}}, ["problem"]),
              report_breakdown),
+        Tool("call_number", "Dial a phone number for the driver (hands-free). Only numbers returned by find_help/"
+             "report_breakdown, or 112/108/1033. Ask the driver first.", params({"phone": s}, ["phone"]), call_number),
+        Tool("problem_solved", "Driver says the breakdown/problem is fixed. Closes it and tells everyone who was helping.",
+             params({}), problem_solved),
         Tool("find_help", "Find nearest mechanic/tyre shop/fuel/hospital/police/dhaba.",
              params({"kind": {"type": "string", "enum": ["mechanic", "tyre", "fuel", "hospital", "police", "dhaba"]}}, ["kind"]),
              find_help),
-        Tool("request_peer_help", "Ask nearby Saarthi trucks (other drivers) for help.", params({"need": s}, ["need"]),
+        Tool("request_peer_help", "Ask nearby Saarthi trucks (other drivers on this road) for help.", params({"need": s}, ["need"]),
              request_peer_help),
         Tool("weather_now", "Weather and warnings at the truck's location.", params({}), weather_now),
         Tool("route_ahead", "Route options to the destination, traffic (if available) and weather warnings ahead.",
@@ -227,69 +308,53 @@ def make_tools(vid: int, turn: Turn, transcript: str) -> list[Tool]:
     ]
 
 
-def system_prompt(v: dict, moving: bool) -> str:
+LANG_NAMES = {"hi-IN": "Hindi", "pa-IN": "Punjabi", "gu-IN": "Gujarati", "mr-IN": "Marathi", "bn-IN": "Bengali",
+              "ta-IN": "Tamil", "te-IN": "Telugu", "kn-IN": "Kannada", "ml-IN": "Malayalam", "en-IN": "English"}
+
+
+def system_prompt(v: dict, moving: bool, live: bool = False) -> str:
     f = db.fleet(v["fleet_id"])
     t = db.active_trip(v["id"])
     trip = f"{t['origin']} → {t['destination']}" if t else "none"
-    mode = ("THE TRUCK IS MOVING: reply in at most 12 words, ask only yes/no questions, never long explanations. "
-            "Safety first.") if moving else "Truck is parked/slow: you may give fuller answers (still short, 1-3 sentences)."
-    return f"""You are "Saarthi", the voice co-driver agent for driver {v['driver_name'] or ''} of truck {v['reg_label']}
-(fleet "{f['name']}"). Current trip: {trip}. Location known: {v['last_lat'] is not None}.
-The driver speaks Hindi/Hinglish/Rajasthani; transcripts come from speech recognition and may contain errors.
-Reply in simple spoken Hinglish written in Latin script, warm and respectful ("aap"). Replies are converted to voice.
+    lang = LANG_NAMES.get(v.get("lang") or "hi-IN", "Hindi")
+    mode = ("THE TRUCK IS MOVING: at most 12 words per reply, only yes/no questions, no long talk. Safety first."
+            if moving else "Truck is parked or slow: you can chat a little more, still 1-3 short sentences.")
+    script = ("Write replies in the script of that language (Devanagari for Hindi/Marwari, Gurmukhi for Punjabi, "
+              "Gujarati script for Gujarati); English words like diesel, toll, tyre can stay as they are."
+              if live else "Write replies in simple Hinglish (Latin script).")
+    return f"""You are "Saarthi", a warm, talkative co-driver companion living on the phone of driver {v['driver_name'] or ''}
+(truck {v['reg_label']}, fleet "{f['name']}"). Current trip: {trip}. Location known: {v['last_lat'] is not None}.
+You talk like a trusted friend from the same background: respectful ("aap", "boss", "ustaad"), caring, light humour,
+never preachy. Everything you say is spoken aloud; the phone is locked on the dashboard, so the driver never touches it.
+Driver's language: {lang}. Reply in the language the driver last spoke (Hindi, Punjabi, Gujarati, Marathi... ; if they
+speak Marwari/Mewari, reply in simple Hindi with a Rajasthani touch). {script}
 {mode}
 Rules:
-- Any money the driver mentions (diesel, toll, khana, repair, challan, bhaada/freight received...) -> call log_entry
-  once per amount. Never claim something is saved; the system reads it back for confirmation.
-- If the amount is unclear, ask again instead of guessing.
+- Any money mentioned (diesel, toll, khana, repair, challan, bhaada/freight received...) -> call log_entry once per amount.
+- When a tool result has "say", speak exactly that text and nothing else.
 - Breakdown/puncture/accident/injury/fire/loot -> call report_breakdown immediately.
-- For injury or accident, tell the driver to call 112. You never call emergency services yourself.
-- Use tools for weather, route, documents, trip summary. Never invent facts.
-- If you do not understand, ask the driver to repeat."""
+- Never dial a number yourself without the driver saying yes; use call_number only with numbers from tools.
+- For injury or accident, the driver talks to 112 directly; you never talk to emergency services.
+- Use tools for weather, route, documents, trip summary. Never invent facts, numbers or places.
+- If you did not understand, ask the driver to repeat. Keep every reply short: it is spoken while driving."""
 
 
 async def handle(v: dict, text: str) -> str:
-    """Process one driver utterance; sends the reply via the bus and returns it."""
+    """Text / voice-note mode (Telegram, simulator). Sends the reply via the bus and returns it."""
     text = (text or "").strip()
     if not text:
         reply = "Awaaz saaf nahi aayi, dobara boliye."
-        await bus.send(Out(chat_id=v["driver_chat_id"], text=reply, speak=reply))
-        return reply
-
-    pend = pending_entries(v["id"])
-    if pend:
-        yn = yes_no(text)
-        if yn is True:
-            reply = await confirm_all(v)
-            await _reply(v, text, reply)
-            return reply
-        if yn is False and not re.search(r"\d", text):
-            cancel_all(v)
-            reply = "Theek hai, cancel kar diya. Sahi amount dobara boliye."
-            await _reply(v, text, reply)
-            return reply
-        cancel_all(v)  # driver said something else (e.g. a correction); start over cleanly
-
-    # fatigue check-in acknowledgement
-    from ..fatigue import ack_if_pending
-    if yes_no(text) is True and ack_if_pending(v["id"]):
-        reply = "Bahut badhiya. Dhyan se chalaiye, paani peete rahiye."
-        await _reply(v, text, reply)
-        return reply
-
-    turn = Turn()
-    moving = is_moving(v)
-    reply = await run_agent(system_prompt(v, moving), memory.get(f"drv:{v['id']}"), text,
-                            make_tools(v["id"], turn, text), agent_name=f"driver:{v['code']}")
-    if turn.final_override:
-        reply = turn.final_override
-    elif turn.new_pending:
-        reply = confirm_prompt(pending_entries(v["id"]))
-    await _reply(v, text, reply)
-    return reply
-
-
-async def _reply(v: dict, user_text: str, reply: str) -> None:
-    memory.add(f"drv:{v['id']}", "user", user_text)
+    else:
+        reply = await intercept(v, text)
+        if reply is None:
+            turn = Turn(text)
+            reply = await run_agent(system_prompt(v, is_moving(v)), memory.get(f"drv:{v['id']}"), text,
+                                    make_tools(v["id"], turn), agent_name=f"driver:{v['code']}")
+            if turn.final_override:
+                reply = turn.final_override
+            elif turn.new_pending:
+                reply = confirm_prompt(pending_entries(v["id"]))
+    memory.add(f"drv:{v['id']}", "user", text)
     memory.add(f"drv:{v['id']}", "assistant", reply)
-    await bus.send(Out(chat_id=v["driver_chat_id"], text=reply, speak=reply))
+    await bus.send(to_driver(v, reply, speak=reply))
+    return reply

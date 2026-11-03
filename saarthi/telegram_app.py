@@ -14,7 +14,7 @@ from telegram.ext import (Application, CallbackQueryHandler, CommandHandler, Con
 
 from . import db, fatigue
 from .agents import ceo, driver, mesh
-from .bus import Out, bus
+from .bus import Out, bus, to_driver
 from .config import settings
 from .speech import MAX_CLIP_SECONDS, get_speech
 
@@ -161,12 +161,12 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     if parts[0] == "fatigue":
         fatigue.ack_if_pending(v["id"])
         await q.edit_message_reply_markup(None)
-        await bus.send(Out(chat_id=v["driver_chat_id"], text="👍 Dhyan se chalaiye.", speak="Dhyan se chalaiye."))
+        await bus.send(to_driver(v, "👍 Dhyan se chalaiye.", speak="Dhyan se chalaiye."))
     elif parts[0] == "mesh" and len(parts) == 3:
         await q.edit_message_reply_markup(None)
         reply = await mesh.respond(v, int(parts[2]), parts[1] == "accept")
         loc = mesh.requester_location(int(parts[2])) if parts[1] == "accept" else None
-        await bus.send(Out(chat_id=v["driver_chat_id"], text=reply, speak=reply,
+        await bus.send(to_driver(v, reply, speak=reply,
                            location=loc if loc and "Kisi aur" not in reply else None))
 
 

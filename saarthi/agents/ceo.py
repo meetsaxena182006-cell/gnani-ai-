@@ -11,7 +11,7 @@ import logging
 from datetime import date, datetime, timedelta, timezone
 
 from .. import costing, db, geo
-from ..bus import Out, bus
+from ..bus import Out, bus, to_driver
 from ..config import settings
 from ..llm import Memory, Tool, params, run_agent
 from .common import CATEGORY_HI, inr, mask_reg, today_ist_start_utc
@@ -112,6 +112,7 @@ def _fleet_tools(fleet_id: int) -> list[Tool]:
                 "trip": f"{t['origin']} → {t['destination']}" if t else "no active trip",
                 "last_location": geo.maps_link(v["last_lat"], v["last_lon"]) if v["last_lat"] else "unknown",
                 "last_seen_utc": v["last_seen"], "speed_kmph": v["last_speed_kmph"],
+                "companion": "live" if v["id"] in bus.live else "offline",
                 "open_incident": inc,
             })
         return rows
@@ -193,9 +194,9 @@ def _fleet_tools(fleet_id: int) -> list[Tool]:
 
     async def message_driver(vehicle_code: str, message: str):
         v = find_vehicle(vehicle_code)
-        if not v.get("driver_chat_id"):
-            return {"error": "driver has not registered on Telegram yet"}
-        await bus.send(Out(chat_id=v["driver_chat_id"], text=f"🏢 Office: {message}", speak=message))
+        if not v.get("driver_chat_id") and v["id"] not in bus.live:
+            return {"error": "driver's companion is offline"}
+        await bus.send(to_driver(v, f"🏢 Office: {message}", speak=f"Boss, office se sandesh: {message}"))
         db.log_agent(f"ceo:{fleet_id}", f"driver:{v['code']}", "instruction", {"message": message})
         return {"sent": True}
 
@@ -203,6 +204,8 @@ def _fleet_tools(fleet_id: int) -> list[Tool]:
         v = find_vehicle(vehicle_code)
         db.ex("UPDATE incidents SET status='resolved', resolved_at=? WHERE vehicle_id=? AND status='open'",
               (db.now(), v["id"]))
+        from . import mesh
+        await mesh.close_requests(v, reason="solved")
         return {"resolved": True}
 
     async def set_diesel_price(price: float):

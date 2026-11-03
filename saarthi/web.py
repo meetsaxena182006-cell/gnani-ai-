@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import html
 import json
+from pathlib import Path
 
 from aiohttp import web
 
@@ -107,6 +108,68 @@ async def api_agent_log(req: web.Request) -> web.Response:
     return web.json_response(rows)
 
 
+STATIC = Path(__file__).parent / "static"
+
+
+async def driver_page(req: web.Request) -> web.FileResponse:
+    return web.FileResponse(STATIC / "driver.html")
+
+
+async def office_page(req: web.Request) -> web.FileResponse:
+    return web.FileResponse(STATIC / "office.html")
+
+
+async def api_offer(req: web.Request) -> web.Response:
+    v = db.vehicle_by_token(req.query.get("v", ""), req.query.get("k", ""))
+    if not v:
+        raise web.HTTPUnauthorized(text="unknown vehicle or wrong key")
+    from . import companion
+    answer = await companion.offer(v, await req.json())
+    return web.json_response(answer)
+
+
+async def api_ice(req: web.Request) -> web.Response:
+    if not db.vehicle_by_token(req.query.get("v", ""), req.query.get("k", "")):
+        raise web.HTTPUnauthorized()
+    return web.json_response(settings.ice_servers)
+
+
+async def api_offer_patch(req: web.Request) -> web.Response:
+    from . import companion
+    await companion.ice(await req.json())
+    return web.json_response({"status": "success"})
+
+
+async def api_fleet(req: web.Request) -> web.Response:
+    _auth(req)
+    out = []
+    for f in db.q("SELECT * FROM fleets ORDER BY id"):
+        vs = []
+        for v in db.q("SELECT * FROM vehicles WHERE fleet_id=? ORDER BY code", (f["id"],)):
+            t = db.active_trip(v["id"])
+            inc = db.one("SELECT description FROM incidents WHERE vehicle_id=? AND status='open' ORDER BY id DESC LIMIT 1", (v["id"],))
+            vs.append({"code": v["code"], "reg": v["reg_label"], "driver": v["driver_name"], "lat": v["last_lat"],
+                       "lon": v["last_lon"], "last_seen": v["last_seen"],
+                       "trip": f"{t['origin']} → {t['destination']}" if t else None,
+                       "companion": "live" if v["id"] in bus.live else "offline",
+                       "issue": inc["description"] if inc else None})
+        out.append({"code": f["code"], "name": f["name"], "vehicles": vs})
+    return web.json_response(out)
+
+
+async def api_ceo_chat(req: web.Request) -> web.Response:
+    _auth(req)
+    body = await req.json()
+    f = db.one("SELECT * FROM fleets WHERE upper(code)=upper(?)", (body.get("fleet", ""),))
+    if not f or not body.get("text"):
+        return web.json_response({"error": "fleet and text required"}, status=400)
+    return web.json_response({"reply": await ceo.handle_owner(f, body["text"])})
+
+
+async def health(req: web.Request) -> web.Response:
+    return web.json_response({"ok": True, "live_companions": len(bus.live)})
+
+
 def build_app() -> web.Application:
     app = web.Application()
     app.add_routes([
@@ -116,6 +179,14 @@ def build_app() -> web.Application:
         web.get("/api/expenses", api_expenses),
         web.get("/api/documents", api_documents),
         web.get("/api/agent-log", api_agent_log),
-        web.get("/health", lambda r: web.json_response({"ok": True})),
+        web.get("/health", health),
+        web.get("/driver", driver_page),
+        web.get("/office", office_page),
+        web.post("/api/offer", api_offer),
+        web.patch("/api/offer", api_offer_patch),
+        web.get("/api/ice", api_ice),
+        web.get("/api/fleet", api_fleet),
+        web.post("/api/ceo/chat", api_ceo_chat),
+        web.static("/static", STATIC),
     ])
     return app

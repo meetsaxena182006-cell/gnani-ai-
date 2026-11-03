@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import secrets
 from datetime import date, timedelta
 
 from . import db
@@ -28,7 +29,8 @@ def seed(demo: bool = False) -> None:
     for fl in FLEETS:
         fid = db.ex("INSERT INTO fleets(code,name,diesel_price) VALUES(?,?,?)", (fl["code"], fl["name"], fl["diesel"]))
         for i, (code, reg, vtype) in enumerate(fl["vehicles"]):
-            vid = db.ex("INSERT INTO vehicles(fleet_id,code,reg_label,vtype) VALUES(?,?,?,?)", (fid, code, reg, vtype))
+            vid = db.ex("INSERT INTO vehicles(fleet_id,code,reg_label,vtype,access_token) VALUES(?,?,?,?,?)",
+                        (fid, code, reg, vtype, secrets.token_urlsafe(9)))
             docs = {"Insurance": 200 - 60 * i, "National Permit": 120, "Fitness": 45 - 20 * i, "PUC": 25 - 20 * i,
                     "Driver Licence": 600}
             for dt, days in docs.items():
@@ -38,10 +40,11 @@ def seed(demo: bool = False) -> None:
         _demo_state()
     print(f"Seeded {settings.db_path}")
     for f in db.q("SELECT * FROM fleets"):
-        vs = db.q("SELECT code, reg_label FROM vehicles WHERE fleet_id=?", (f["id"],))
+        vs = db.q("SELECT code, reg_label, access_token FROM vehicles WHERE fleet_id=?", (f["id"],))
         print(f"  {f['name']}: owner joins with  /start OWNER-{f['code']}")
         for v in vs:
-            print(f"     driver of {v['reg_label']} joins with  /start {v['code']}")
+            print(f"     {v['reg_label']}: companion app  {settings.public_base_url}/driver?v={v['code']}&k={v['access_token']}"
+                  f"   (Telegram fallback: /start {v['code']})")
 
 
 def _demo_state() -> None:

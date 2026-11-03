@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="hi"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#0f3d3e">
+<link rel="manifest" href="/static/manifest.json">
+<title>Saarthi</title>
+<style>
+:root{--bg:#0b1f20;--fg:#f4f1ea;--accent:#f2a541;--ok:#5cc58a;--bad:#e5484d}
+*{box-sizing:border-box}html,body{margin:0;height:100%;background:var(--bg);color:var(--fg);font-family:system-ui,"Noto Sans Devanagari",sans-serif}
+main{min-height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:20px;padding:16px;text-align:center}
+#orb{width:200px;height:200px;border-radius:50%;background:radial-gradient(circle at 35% 35%,#ffd38a,var(--accent) 55%,#a5641b);
+ box-shadow:0 0 0 0 rgba(242,165,65,.5);transition:transform .2s}
+#orb.talking{animation:pulse 1.2s infinite}#orb.off{filter:grayscale(1) brightness(.5)}
+@keyframes pulse{0%{box-shadow:0 0 0 0 rgba(242,165,65,.55)}70%{box-shadow:0 0 0 40px rgba(242,165,65,0)}100%{box-shadow:0 0 0 0 rgba(242,165,65,0)}}
+button{font-size:1.4rem;padding:18px 32px;border-radius:999px;border:0;background:var(--accent);color:#1b1206;font-weight:700}
+#status{font-size:1.1rem;opacity:.85}#card{max-width:520px;width:100%;font-size:1.05rem;line-height:1.5;white-space:pre-wrap;opacity:.9}
+#actions a{display:inline-block;margin:6px;padding:14px 22px;border-radius:12px;background:#183a3b;color:var(--fg);text-decoration:none;font-size:1.2rem}
+</style></head>
+<body><main>
+  <div id="orb" class="off"></div>
+  <button id="start">सारथी शुरू करें</button>
+  <div id="status">एक बार दबाइए — फिर फ़ोन को छूने की ज़रूरत नहीं।</div>
+  <div id="card"></div><div id="actions"></div>
+  <audio id="out" autoplay playsinline></audio>
+</main>
+<script>
+const qs = new URLSearchParams(location.search);
+function store(k, v){ try { if (v) localStorage.setItem(k, v); return localStorage.getItem(k); } catch(_) { return v; } }
+const V = store("saarthi_v", qs.get("v")), K = store("saarthi_k", qs.get("k"));
+const $ = id => document.getElementById(id);
+let pc, dc, wakeLock, geoWatch, pingTimer, reconnectTimer, stream, retries = 0;
+
+function status(t){ $("status").textContent = t; }
+
+async function keepAwake(){
+  try { if ("wakeLock" in navigator) { wakeLock = await navigator.wakeLock.request("screen");
+        wakeLock.addEventListener("release", () => setTimeout(keepAwake, 1000)); } } catch(e) {}
+}
+document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") keepAwake(); });
+
+function send(obj){ if (dc && dc.readyState === "open") dc.send(JSON.stringify(obj)); }
+
+function startGps(){
+  if (!navigator.geolocation || geoWatch) return;
+  geoWatch = navigator.geolocation.watchPosition(
+    p => send({type:"location", lat:p.coords.latitude, lon:p.coords.longitude, speed:p.coords.speed, acc:p.coords.accuracy}),
+    e => console.warn(e), {enableHighAccuracy:true, maximumAge:15000, timeout:30000});
+}
+
+function onMessage(m){
+  if (m.type !== "display") return;
+  $("card").textContent = m.text || "";
+  const acts = $("actions"); acts.innerHTML = "";
+  (m.contacts || []).forEach(([name, phone]) => { const a = document.createElement("a"); a.href = "tel:" + phone;
+    a.textContent = "📞 " + name; acts.appendChild(a); });
+  (m.actions || []).forEach(a => { if (a.type === "dial") {
+    // Hands-free dial. A browser may need one tap; the Android wrapper app dials directly.
+    if (window.SaarthiAndroid) window.SaarthiAndroid.dial(a.phone); else location.href = "tel:" + a.phone; } });
+}
+
+async function connect(){
+  clearTimeout(reconnectTimer);
+  status("जुड़ रहा है…");
+  let ice = [{urls:"stun:stun.l.google.com:19302"}];
+  try { ice = await (await fetch(`/api/ice?v=${encodeURIComponent(V)}&k=${encodeURIComponent(K)}`)).json(); } catch(_) {}
+  pc = new RTCPeerConnection({iceServers: ice});
+  dc = pc.createDataChannel("saarthi", {ordered:true});
+  dc.onopen = () => { status("सारथी सुन रहा है 🎧"); $("orb").classList.remove("off"); retries = 0;
+    pingTimer = setInterval(() => dc.readyState === "open" && dc.send("ping"), 1000); startGps(); };
+  dc.onmessage = e => { try { onMessage(JSON.parse(e.data)); } catch(_) {} };
+  pc.ontrack = e => { $("out").srcObject = e.streams[0] || new MediaStream([e.track]); };
+  stream = stream || await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:true, noiseSuppression:true, autoGainControl:true, channelCount:1}});
+  pc.addTransceiver(stream.getAudioTracks()[0], {direction:"sendrecv"});
+  pc.addTransceiver("video", {direction:"recvonly"});
+  pc.onconnectionstatechange = () => { if (["failed","disconnected","closed"].includes(pc.connectionState)) reconnect(); };
+  const offer = await pc.createOffer(); await pc.setLocalDescription(offer);
+  await new Promise(r => { if (pc.iceGatheringState === "complete") r(); else { pc.onicegatheringstatechange = () => pc.iceGatheringState === "complete" && r(); setTimeout(r, 2500); } });
+  const res = await fetch(`/api/offer?v=${encodeURIComponent(V)}&k=${encodeURIComponent(K)}`, {method:"POST",
+    headers:{"Content-Type":"application/json"}, body:JSON.stringify({sdp:pc.localDescription.sdp, type:pc.localDescription.type})});
+  if (!res.ok) { status(res.status === 401 ? "लिंक गलत है — मालिक से नया लिंक लीजिए" : "सर्वर से जुड़ नहीं पाया"); return reconnect(); }
+  await pc.setRemoteDescription(await res.json());
+}
+
+function reconnect(){
+  clearInterval(pingTimer); $("orb").classList.add("off");
+  try { pc && pc.close(); } catch(_) {}
+  const wait = Math.min(30000, 2000 * 2 ** retries++);
+  status(`नेटवर्क कमज़ोर है — ${Math.round(wait/1000)} सेकंड में फिर जुड़ेगा`);
+  reconnectTimer = setTimeout(connect, wait);
+}
+
+$("out").onplaying = () => $("orb").classList.add("talking");
+$("out").onpause = () => $("orb").classList.remove("talking");
+$("start").onclick = async () => { $("start").style.display = "none"; await keepAwake(); connect(); };
+if (!V || !K) { status("लिंक अधूरा है (v और k चाहिए)"); $("start").disabled = true; }
+</script></body></html>

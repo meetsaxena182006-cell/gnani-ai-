@@ -18,14 +18,26 @@ class Out:
     buttons: list[tuple[str, str]] = field(default_factory=list)   # (label, "cb:..." or "https://..." / "tg://")
     contacts: list[tuple[str, str]] = field(default_factory=list)  # (name, phone) tappable to call
     location: tuple[float, float] | None = None
+    vehicle_id: int | None = None      # set for driver messages: delivered to the live voice companion if connected
+    actions: list[dict] = field(default_factory=list)  # client actions for the phone app, e.g. {"type": "dial", "phone": "112"}
+
+
+def to_driver(v: dict, text: str, speak: str | None = None, **kw) -> Out:
+    """Message for a driver: live voice companion first, Telegram as fallback."""
+    return Out(chat_id=v.get("driver_chat_id") or 0, text=text, speak=speak, vehicle_id=v["id"], **kw)
 
 
 Sender = Callable[[Out], Awaitable[None]]
 
 
+class LiveTarget:  # implemented by companion.LiveSession
+    async def deliver(self, out: Out) -> None: ...
+
+
 class Bus:
     def __init__(self) -> None:
         self._sender: Sender | None = None
+        self.live: dict[int, "LiveTarget"] = {}  # vehicle_id -> live companion session
         self.sent: list[Out] = []  # kept for tests / simulator
 
     def set_sender(self, sender: Sender) -> None:
@@ -35,7 +47,14 @@ class Bus:
         self.sent.append(out)
         if len(self.sent) > 500:
             self.sent = self.sent[-200:]
-        if self._sender is None:
+        live = self.live.get(out.vehicle_id) if out.vehicle_id else None
+        if live is not None:
+            try:
+                await live.deliver(out)
+                return
+            except Exception:
+                log.exception("live delivery failed; falling back")
+        if self._sender is None or not out.chat_id:
             log.info("[no sender] -> %s: %s", out.chat_id, out.text)
             return
         try:

@@ -2,17 +2,19 @@
 Also tracks movement from Telegram live-location updates (no GPS hardware)."""
 from __future__ import annotations
 
+import random
 from datetime import datetime, timedelta, timezone
 
 from . import db, geo
 from .agents import ceo
 from .agents.common import ist_now
-from .bus import Out, bus
+from .bus import bus, to_driver
 from .config import settings
 from .safety import is_moving
 
 _pending: dict[int, datetime] = {}       # vehicle_id -> when the check-in was sent
 _last_moving: dict[int, datetime] = {}
+_live_since: dict[int, str] = {}
 REST_RESET_MIN = 15
 ANSWER_WINDOW_MIN = 10
 
@@ -55,7 +57,9 @@ def _interval_min() -> int:
 async def tick() -> None:
     """Run every few minutes."""
     t_now = datetime.now(timezone.utc)
-    for v in db.q("SELECT * FROM vehicles WHERE driver_chat_id IS NOT NULL"):
+    for v in db.q("SELECT * FROM vehicles"):
+        if not v["driver_chat_id"] and v["id"] not in bus.live:
+            continue
         sent = _pending.get(v["id"])
         if sent and t_now - sent > timedelta(minutes=ANSWER_WINDOW_MIN):
             missed = (v["missed_checks"] or 0) + 1
@@ -67,9 +71,11 @@ async def tick() -> None:
             else:
                 await _send_check(v, retry=True)
             continue
-        if sent or not is_moving(v) or not v["driving_since"]:
+        live = v["id"] in bus.live
+        if sent or not (live or (is_moving(v) and v["driving_since"])):
             continue
-        ref = max(filter(None, [v["driving_since"], v["last_fatigue_ack"]]))
+        start = _live_since.setdefault(v["id"], t_now.isoformat(timespec="seconds")) if live else None
+        ref = max(filter(None, [v["driving_since"], v["last_fatigue_ack"], start]))
         if t_now - datetime.fromisoformat(ref) >= timedelta(minutes=_interval_min()):
             await _send_check(v)
 
@@ -79,9 +85,15 @@ async def _send_check(v: dict, retry: bool = False) -> None:
     hours = ""
     if v["driving_since"]:
         h = (datetime.now(timezone.utc) - datetime.fromisoformat(v["driving_since"])).total_seconds() / 3600
-        hours = f" {h:.0f} ghante se chala rahe ho."
-    text = ("Dobara pooch raha hoon: " if retry else "") + f"Sab theek hai?{hours} Haan boliye ya button dabaiye."
-    if not retry and hours and float(hours.split()[0]) >= 4:
-        text += " Agle dhabe pe 15 minute aaram kar lijiye."
-    await bus.send(Out(chat_id=v["driver_chat_id"], text="😴 " + text, speak=text,
-                       buttons=[("✅ Haan, theek hoon", "cb:fatigue:ok")]))
+        hours = f" {h:.0f} ghante ho gaye chalate hue." if h >= 1 else ""
+    if retry:
+        text = "Boss? Sab theek hai na? Bas haan bol dijiye."
+    else:
+        text = random.choice([
+            "Ram Ram boss! Sab theek? Tabiyat badhiya hai na?",
+            "Boss, kaisa chal raha hai safar? Koi madad chahiye?",
+            "Ustaad, sab okay? Neend to nahi aa rahi?",
+        ]) + hours
+        if hours and float(hours.split()[0]) >= 4:
+            text += " Agle dhabe pe chai aur 15 minute aaram ho jaaye?"
+    await bus.send(to_driver(v, "😴 " + text, speak=text, buttons=[("✅ Haan, theek hoon", "cb:fatigue:ok")]))

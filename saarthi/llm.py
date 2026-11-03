@@ -32,21 +32,44 @@ def params(props: dict, required: list[str] | None = None) -> dict:
 
 
 _client = None
+_providers: list[tuple[object, str, str]] | None = None  # (client, model, name)
+
+
+def providers() -> list[tuple[object, str, str]]:
+    global _providers
+    if _client is not None:  # injected (tests)
+        return [(_client, settings.llm_model, "injected")]
+    if _providers is None:
+        from openai import AsyncOpenAI
+
+        from .config import llm_providers
+        cfg = llm_providers() or [{"name": "default", "api_key": settings.llm_api_key or "missing",
+                                   "base_url": settings.llm_base_url, "model": settings.llm_model}]
+        _providers = [(AsyncOpenAI(api_key=p["api_key"], base_url=p["base_url"], timeout=30), p["model"], p["name"])
+                      for p in cfg]
+    return _providers
 
 
 def get_client():
-    global _client
-    if _client is None:
-        from openai import AsyncOpenAI
-
-        _client = AsyncOpenAI(api_key=settings.llm_api_key or "missing", base_url=settings.llm_base_url)
-    return _client
+    return providers()[0][0]
 
 
 def set_client(client) -> None:
     """Tests inject a scripted fake client here."""
     global _client
     _client = client
+
+
+async def _complete(messages: list[dict], tools: list["Tool"], agent_name: str):
+    last_error = None
+    for client, model, name in providers():
+        try:
+            return await client.chat.completions.create(
+                model=model, messages=messages, tools=[t.schema() for t in tools] or None, temperature=0.2)
+        except Exception as e:  # provider down / quota: try the next one
+            last_error = e
+            log.warning("[%s] LLM provider %s failed: %s; trying next", agent_name, name, e)
+    raise last_error
 
 
 class Memory:
@@ -67,12 +90,8 @@ async def run_agent(system: str, history: list[dict], user_text: str, tools: lis
     by_name = {t.name: t for t in tools}
     messages: list[dict] = [{"role": "system", "content": system}, *history,
                             {"role": "user", "content": user_text}]
-    client = get_client()
     for _ in range(max_steps):
-        resp = await client.chat.completions.create(
-            model=settings.llm_model, messages=messages,
-            tools=[t.schema() for t in tools] or None, temperature=0.2,
-        )
+        resp = await _complete(messages, tools, agent_name)
         msg = resp.choices[0].message
         calls = getattr(msg, "tool_calls", None) or []
         if not calls:

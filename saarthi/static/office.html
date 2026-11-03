@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Saarthi Office</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<style>
+:root{--bg:#f6f4ef;--panel:#fff;--fg:#1d2321;--muted:#6b726f;--accent:#0f6b5c;--warn:#b7791f;--bad:#c53030;--line:#e4e0d6}
+@media (prefers-color-scheme:dark){:root{--bg:#121615;--panel:#1b201f;--fg:#ece9e2;--muted:#9aa3a0;--line:#2a312f}}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.45 system-ui,sans-serif}
+header{padding:12px 16px;display:flex;gap:12px;align-items:center;border-bottom:1px solid var(--line)}
+header b{font-size:1.1rem}select,input,button{font:inherit;padding:8px 10px;border-radius:8px;border:1px solid var(--line);background:var(--panel);color:var(--fg)}
+button{background:var(--accent);color:#fff;border:0;cursor:pointer}
+.grid{display:grid;grid-template-columns:1.3fr 1fr;gap:12px;padding:12px}
+@media (max-width:900px){.grid{grid-template-columns:1fr}}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:12px;min-width:0}
+#map{height:360px;border-radius:8px}
+table{width:100%;border-collapse:collapse}td,th{padding:6px;border-bottom:1px solid var(--line);text-align:left;font-size:.92rem}
+.live{color:var(--accent);font-weight:600}.off{color:var(--muted)}
+#log{max-height:300px;overflow:auto;font-size:.88rem}#log div{padding:4px 0;border-bottom:1px dashed var(--line)}
+#chat{height:260px;overflow:auto;white-space:pre-wrap}.me{color:var(--accent);margin-top:8px}.bot{margin-top:4px}
+form{display:flex;gap:8px;margin-top:8px}form input{flex:1}
+</style></head><body>
+<header><b>🏢 Saarthi Office — CEO Agent</b><select id="fleet"></select><span id="st" class="off"></span></header>
+<div class="grid">
+  <div class="card"><div id="map"></div><table id="trucks"><thead><tr><th>Truck</th><th>Driver</th><th>Trip</th><th>Companion</th><th>Last seen</th><th>Issue</th></tr></thead><tbody></tbody></table></div>
+  <div class="card"><b>Ask the CEO Agent</b><div id="chat"></div>
+    <form id="f"><input id="q" placeholder="e.g. Udaipur se Ahmedabad 16 ton, client 22000 de raha hai — profit?"><button>Ask</button></form>
+    <p style="margin:12px 0 4px"><b>Agent activity</b></p><div id="log"></div></div>
+</div>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+let KEY; try { KEY = localStorage.getItem("saarthi_key"); } catch(_) {}
+if (!KEY) { KEY = prompt("Office key (API_SHARED_SECRET)"); try { localStorage.setItem("saarthi_key", KEY); } catch(_) {} }
+const H = {"X-Saarthi-Key": KEY, "Content-Type": "application/json"};
+const api = (p, o={}) => fetch(p, {...o, headers:H}).then(r => { if (r.status === 401) { try{localStorage.removeItem("saarthi_key")}catch(_){}; throw new Error("bad key"); } return r.json(); });
+const map = L.map("map").setView([24.55, 73.7], 9);
+const street = L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {maxZoom:19, attribution:"© OpenStreetMap"}).addTo(map);
+const sat = L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}", {maxZoom:19, attribution:"Imagery © Esri, Maxar, Earthstar Geographics"});
+L.control.layers({"Map": street, "Satellite": sat}).addTo(map);
+const markers = {}; let fitted = false;
+async function refresh(){
+  const fleets = await api("/api/fleet");
+  const sel = document.getElementById("fleet");
+  if (!sel.options.length) fleets.forEach(f => sel.add(new Option(f.name, f.code)));
+  const f = fleets.find(x => x.code === sel.value) || fleets[0]; if (!f) return;
+  const tb = document.querySelector("#trucks tbody"); tb.innerHTML = "";
+  const pts = [];
+  f.vehicles.forEach(v => {
+    tb.insertAdjacentHTML("beforeend", `<tr><td>${v.reg}</td><td>${v.driver||"-"}</td><td>${v.trip||"-"}</td>
+      <td class="${v.companion==="live"?"live":"off"}">${v.companion}</td><td>${v.last_seen? new Date(v.last_seen).toLocaleTimeString():"-"}</td>
+      <td>${v.issue? "⚠️ "+v.issue : ""}</td></tr>`);
+    if (v.lat != null) { pts.push([v.lat, v.lon]);
+      (markers[v.code] ||= L.marker([v.lat, v.lon]).addTo(map)).setLatLng([v.lat, v.lon]).bindPopup(`${v.reg} · ${v.driver||""}`); }
+  });
+  if (pts.length && !fitted) { map.fitBounds(pts, {padding:[40,40], maxZoom:12}); fitted = true; }
+  const log = await api("/api/agent-log?limit=40");
+  document.getElementById("log").innerHTML = log.map(r => `<div><small>${new Date(r.ts).toLocaleTimeString()}</small> <b>${r.from_agent}</b> → ${r.to_agent}: ${r.kind} <small>${JSON.stringify(r.payload).slice(0,120)}</small></div>`).join("");
+  document.getElementById("st").textContent = "updated " + new Date().toLocaleTimeString();
+}
+document.getElementById("f").onsubmit = async e => { e.preventDefault();
+  const q = document.getElementById("q"), chat = document.getElementById("chat"), text = q.value.trim(); if (!text) return;
+  chat.insertAdjacentHTML("beforeend", `<div class="me">You: ${text.replace(/</g,"&lt;")}</div>`); q.value = "";
+  const r = await api("/api/ceo/chat", {method:"POST", body:JSON.stringify({fleet:document.getElementById("fleet").value, text})});
+  chat.insertAdjacentHTML("beforeend", `<div class="bot">CEO Agent: ${(r.reply||r.error||"").replace(/</g,"&lt;")}</div>`); chat.scrollTop = 1e9; };
+refresh(); setInterval(refresh, 15000);
+</script></body></html>

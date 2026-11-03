@@ -1,3 +1,4 @@
+import json
 import os
 from dataclasses import dataclass, field
 from dotenv import load_dotenv
@@ -29,10 +30,25 @@ class Settings:
     tts_language: str = os.getenv("TTS_LANGUAGE", "hi-IN")
     speech_mode: str = os.getenv("SPEECH_MODE", "gnani")
     db_path: str = os.getenv("DB_PATH", "data/saarthi.db")
+    # WebRTC: STUN by default. Mobile networks (CGNAT) usually also need a TURN server, e.g.
+    # ICE_SERVERS=[{"urls":"stun:stun.l.google.com:19302"},{"urls":"turn:your.turn:3478","username":"u","credential":"p"}]
+    ice_servers: list[dict] = field(default_factory=lambda: json.loads(
+        os.getenv("ICE_SERVERS", '[{"urls": "stun:stun.l.google.com:19302"}]')))
     # Safety / behaviour
-    fatigue_interval_min: int = int(os.getenv("FATIGUE_INTERVAL_MIN", "120"))
+    fatigue_interval_min: int = int(os.getenv("FATIGUE_INTERVAL_MIN", "90"))  # companion check-in every 1-2 h
     mesh_radius_km: float = float(os.getenv("MESH_RADIUS_KM", "25"))
     moving_speed_kmph: float = float(os.getenv("MOVING_SPEED_KMPH", "8"))
+
+
+def llm_providers() -> list[dict]:
+    """Reasoning LLMs in priority order (OpenAI-compatible). Primary = LLM_*, fallback = LLM2_*.
+    E.g. primary: Gnani-provided LLM endpoint or self-hosted Evon (vLLM); fallback: Gemini/Groq."""
+    out = []
+    for prefix in ("LLM", "LLM2", "LLM3"):
+        key, url, model = os.getenv(f"{prefix}_API_KEY"), os.getenv(f"{prefix}_BASE_URL"), os.getenv(f"{prefix}_MODEL")
+        if key and url and model:
+            out.append({"name": os.getenv(f"{prefix}_NAME", prefix.lower()), "api_key": key, "base_url": url, "model": model})
+    return out
 
 
 settings = Settings()
