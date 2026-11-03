@@ -82,6 +82,18 @@ class LiveSession(LiveTarget):
         if self.worker:
             await self.worker.queue_frames(frames)
 
+    def refresh_context(self, v: dict) -> None:
+        """Fresh situation (time, speed, landmark, unreported tolls...) in the system message every turn."""
+        ctx = getattr(self, "context", None)
+        if ctx is None:
+            return
+        try:
+            msgs = ctx.get_messages()
+            if msgs and isinstance(msgs[0], dict) and msgs[0].get("role") == "system":
+                msgs[0]["content"] = drv.system_prompt(v, is_moving(v), live=True)
+        except Exception:
+            log.exception("context refresh failed")
+
     # ---------- pipeline ----------
     def _tools(self):
         from pipecat.adapters.llm.schemas.function_schema import FunctionSchema
@@ -145,6 +157,7 @@ class LiveSession(LiveTarget):
                 llm = LLMSwitcher(llms=llms, strategy_type=ServiceSwitcherStrategyFailover)
             context = LLMContext(messages=[{"role": "system", "content": drv.system_prompt(v, is_moving(v), live=True)}],
                                  tools=self._tools())
+            self.context = context
             agg = LLMContextAggregatorPair(context, user_params=LLMUserAggregatorParams(vad_analyzer=SileroVADAnalyzer()))
             guard = CompanionGuard(self)
             pipeline = Pipeline([transport.input(), stt, guard, agg.user(), llm, tts, transport.output(), agg.assistant()])
@@ -212,6 +225,7 @@ class CompanionGuard(_guard_base()):
                 return  # driver is talking to someone else; stay quiet
             self.s.turn.transcript = text
             self.s.turn.new_pending = False
+            self.s.refresh_context(v)
         await self.push_frame(frame, direction)
 
     async def _client_message(self, msg) -> None:
@@ -219,8 +233,8 @@ class CompanionGuard(_guard_base()):
             return
         if msg.get("type") == "location" and msg.get("lat") is not None:
             speed = msg.get("speed")  # m/s from the phone's GPS, may be null
-            fatigue.update_location(self.s.vid, float(msg["lat"]), float(msg["lon"]),
-                                    speed * 3.6 if isinstance(speed, (int, float)) else None)
+            await fatigue.location_update(self.s.vid, float(msg["lat"]), float(msg["lon"]),
+                                          speed * 3.6 if isinstance(speed, (int, float)) else None)
 
 
 # ---------- WebRTC signalling (called from web.py) ----------

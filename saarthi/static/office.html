@@ -21,7 +21,7 @@ form{display:flex;gap:8px;margin-top:8px}form input{flex:1}
 </style></head><body>
 <header><b>🏢 Saarthi Office — CEO Agent</b><select id="fleet"></select><span id="st" class="off"></span></header>
 <div class="grid">
-  <div class="card"><div id="map"></div><table id="trucks"><thead><tr><th>Truck</th><th>Driver</th><th>Trip</th><th>Companion</th><th>Last seen</th><th>Issue</th></tr></thead><tbody></tbody></table></div>
+  <div class="card"><div id="map"></div><table id="trucks"><thead><tr><th>Truck</th><th>Driver</th><th>Trip</th><th>Companion</th><th>Speed</th><th>Last seen</th><th>Watchdog</th></tr></thead><tbody></tbody></table></div>
   <div class="card"><b>Ask the CEO Agent</b><div id="chat"></div>
     <form id="f"><input id="q" placeholder="e.g. Udaipur se Ahmedabad 16 ton, client 22000 de raha hai — profit?"><button>Ask</button></form>
     <p style="margin:12px 0 4px"><b>Agent activity</b></p><div id="log"></div></div>
@@ -46,8 +46,9 @@ async function refresh(){
   const pts = [];
   f.vehicles.forEach(v => {
     tb.insertAdjacentHTML("beforeend", `<tr><td>${v.reg}</td><td>${v.driver||"-"}</td><td>${v.trip||"-"}</td>
-      <td class="${v.companion==="live"?"live":"off"}">${v.companion}</td><td>${v.last_seen? new Date(v.last_seen).toLocaleTimeString():"-"}</td>
-      <td>${v.issue? "⚠️ "+v.issue : ""}</td></tr>`);
+      <td class="${v.companion==="live"?"live":"off"}">${v.companion}</td><td>${v.speed} km/h</td>
+      <td>${v.last_seen? new Date(v.last_seen).toLocaleTimeString():"-"}</td>
+      <td>${v.issue? "⚠️ "+v.issue+" " : ""}${v.tolls_unreported? "🧾 "+v.tolls_unreported+" toll(s) unreported" : (v.issue? "" : "✅")}</td></tr>`);
     if (v.lat != null) { pts.push([v.lat, v.lon]);
       (markers[v.code] ||= L.marker([v.lat, v.lon]).addTo(map)).setLatLng([v.lat, v.lon]).bindPopup(`${v.reg} · ${v.driver||""}`); }
   });

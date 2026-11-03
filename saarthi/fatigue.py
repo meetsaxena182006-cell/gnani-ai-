@@ -41,6 +41,19 @@ def update_location(vid: int, lat: float, lon: float, speed_kmph: float | None =
     return db.vehicle(vid)
 
 
+async def location_update(vid: int, lat: float, lon: float, speed_kmph: float | None = None) -> dict:
+    """GPS fix from the phone: update position, then let the CEO watchdog look at it (tolls, stops, speed...)."""
+    from . import watchdog
+    before = db.vehicle(vid)
+    after = update_location(vid, lat, lon, speed_kmph)
+    try:
+        await watchdog.on_location(before, after, after["last_speed_kmph"])
+    except Exception:
+        import logging
+        logging.getLogger("saarthi.watchdog").exception("watchdog on_location failed")
+    return after
+
+
 def ack_if_pending(vid: int) -> bool:
     if vid in _pending:
         _pending.pop(vid)

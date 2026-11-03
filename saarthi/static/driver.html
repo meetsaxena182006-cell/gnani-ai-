@@ -22,6 +22,7 @@ button{font-size:1.4rem;padding:18px 32px;border-radius:999px;border:0;backgroun
   <div id="status">एक बार दबाइए — फिर फ़ोन को छूने की ज़रूरत नहीं।</div>
   <div id="card"></div><div id="actions"></div>
   <audio id="out" autoplay playsinline></audio>
+  <audio id="music" playsinline></audio>
 </main>
 <script>
 const qs = new URLSearchParams(location.search);
@@ -53,9 +54,36 @@ function onMessage(m){
   const acts = $("actions"); acts.innerHTML = "";
   (m.contacts || []).forEach(([name, phone]) => { const a = document.createElement("a"); a.href = "tel:" + phone;
     a.textContent = "📞 " + name; acts.appendChild(a); });
-  (m.actions || []).forEach(a => { if (a.type === "dial") {
-    // Hands-free dial. A browser may need one tap; the Android wrapper app dials directly.
-    if (window.SaarthiAndroid) window.SaarthiAndroid.dial(a.phone); else location.href = "tel:" + a.phone; } });
+  (m.actions || []).forEach(a => {
+    if (a.type === "dial") {
+      // Hands-free dial. A browser may need one tap; the Android wrapper app dials directly.
+      if (window.SaarthiAndroid) window.SaarthiAndroid.dial(a.phone); else location.href = "tel:" + a.phone;
+    } else if (a.type === "music") {
+      const mu = $("music");
+      if (a.action === "play") { mu.src = a.url; mu.volume = 0.8; mu.play().catch(() => {}); }
+      else { mu.pause(); mu.removeAttribute("src"); }
+    } else if (a.type === "open_url") {
+      // Songs open in YouTube Music (needs one tap; the companion keeps running in the background)
+      const b = document.createElement("a"); b.href = a.url; b.target = "_blank"; b.rel = "noopener";
+      b.textContent = a.label || "▶ Play"; acts.appendChild(b);
+    }
+  });
+}
+
+// Duck music while Saarthi speaks: watch the companion's audio level
+function startDucking(stream){
+  try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const an = ctx.createAnalyser(); an.fftSize = 512;
+    ctx.createMediaStreamSource(stream).connect(an);
+    const buf = new Uint8Array(an.fftSize);
+    setInterval(() => {
+      an.getByteTimeDomainData(buf);
+      let peak = 0; for (const x of buf) peak = Math.max(peak, Math.abs(x - 128));
+      const mu = $("music"); if (!mu.src) return;
+      mu.volume = peak > 6 ? 0.12 : Math.min(0.8, mu.volume + 0.05);
+    }, 100);
+  } catch(_) {}
 }
 
 async function connect(){
@@ -68,7 +96,8 @@ async function connect(){
   dc.onopen = () => { status("सारथी सुन रहा है 🎧"); $("orb").classList.remove("off"); retries = 0;
     pingTimer = setInterval(() => dc.readyState === "open" && dc.send("ping"), 1000); startGps(); };
   dc.onmessage = e => { try { onMessage(JSON.parse(e.data)); } catch(_) {} };
-  pc.ontrack = e => { $("out").srcObject = e.streams[0] || new MediaStream([e.track]); };
+  pc.ontrack = e => { const st = e.streams[0] || new MediaStream([e.track]); $("out").srcObject = st;
+    if (e.track.kind === "audio") startDucking(st); };
   stream = stream || await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:true, noiseSuppression:true, autoGainControl:true, channelCount:1}});
   pc.addTransceiver(stream.getAudioTracks()[0], {direction:"sendrecv"});
   pc.addTransceiver("video", {direction:"recvonly"});

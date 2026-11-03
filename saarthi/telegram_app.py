@@ -138,7 +138,7 @@ async def on_location(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     if not v or not msg.location:
         return
     first = v["last_lat"] is None
-    fatigue.update_location(v["id"], msg.location.latitude, msg.location.longitude)
+    await fatigue.location_update(v["id"], msg.location.latitude, msg.location.longitude)
     if update.message and (first or not msg.location.live_period):
         await msg.reply_text("📍 Location mil gayi ✅")
 

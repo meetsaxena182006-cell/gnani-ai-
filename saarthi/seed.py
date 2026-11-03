@@ -56,7 +56,8 @@ def _demo_state() -> None:
         v = db.vehicle_by_code(code)
         update_location(v["id"], lat, lon, speed_kmph=0)
     v1 = db.vehicle_by_code("MW-T1")
-    db.start_trip(v1["id"], "Udaipur", "Ahmedabad", 38000, "Demo Client Pvt Ltd")
+    t = db.start_trip(v1["id"], "Udaipur", "Ahmedabad", 38000, "Demo Client Pvt Ltd")
+    db.ex("UPDATE trips SET dest_lat=23.0225, dest_lon=72.5714 WHERE id=?", (t["id"],))
 
 
 if __name__ == "__main__":

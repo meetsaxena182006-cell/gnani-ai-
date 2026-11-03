@@ -27,7 +27,12 @@ Phone in dashboard holder (web app; screen kept awake)          Owner laptop /of
 | Weak highway network | Auto-reconnect with backoff. TTS uses per-reply HTTP streaming (SSE), so a network drop doesn't silence the companion. A TURN server is configurable for mobile networks. |
 | Reasoning LLM | Ordered failover: `LLM_*` (e.g. a Gnani-provided LLM or self-hosted Evon), then `LLM2_*` (Gemini/Groq). |
 
-## Done (tested offline: 23 tests, plus a WebRTC end-to-end smoke test)
+## Added in round 3
+- **CEO watchdog** (`watchdog.py`): checks for NHAI toll crossings that weren't logged (the CEO asks the driver via the companion), long stops, heading away from the destination, overspeeding, trucks gone offline, and diesel efficiency. Results show in the owner digest and on the office dashboard.
+- **Companion brain:** situation refreshed every turn, JARVIS-style talkative personality, `think_deeply` (reasoning model), road analysis (tolls on route, weather at ETA, night hours), and music with ducking.
+- **CEO:** `watch_report` and `analyze_business` tools; quotes use the NHAI tolls on the real route.
+
+## Done (tested offline: 36 tests, plus a WebRTC end-to-end smoke test)
 Live companion pipeline · phone web app · Fleet Mesh with voice consent and solved/closed broadcasts · CEO Agent · office dashboard with map/satellite toggle · Telegram for owner voice notes · deterministic cost engine · fatigue check-ins · client tracking link · n8n workflows · Prisma accuracy harness.
 
 ## Next (in order)

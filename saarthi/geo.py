@@ -11,6 +11,7 @@ import httpx
 from .config import settings
 
 UA = {"User-Agent": "saarthi-fleet-demo/0.1"}
+TRUCK_FACTOR = 1.4  # loaded trucks average ~40% slower than OSRM car estimates on Indian highways
 TIMEOUT = httpx.Timeout(20.0)
 
 
@@ -119,7 +120,7 @@ async def route(o_lat: float, o_lon: float, d_lat: float, d_lon: float) -> dict:
 async def _osrm_route(o_lat, o_lon, d_lat, d_lon) -> dict:
     url = f"https://router.project-osrm.org/route/v1/driving/{o_lon},{o_lat};{d_lon},{d_lat}"
     async with httpx.AsyncClient(headers=UA, timeout=TIMEOUT) as c:
-        r = await c.get(url, params={"alternatives": "true", "overview": "simplified", "geometries": "geojson"})
+        r = await c.get(url, params={"alternatives": "true", "overview": "full", "geometries": "geojson"})
         r.raise_for_status()
         js = r.json()
     routes = []
@@ -128,7 +129,9 @@ async def _osrm_route(o_lat, o_lon, d_lat, d_lon) -> dict:
         routes.append({
             "distance_km": round(rt["distance"] / 1000, 1),
             "duration_h": round(rt["duration"] / 3600, 1),  # car-speed estimate; trucks are slower
-            "sample_points": _sample(coords, 4),
+            "truck_duration_h": round(rt["duration"] * TRUCK_FACTOR / 3600, 1),
+            "sample_points": _sample(coords, 5),
+            "_coords": [(c[1], c[0]) for c in coords],
         })
     return {"source": "OSRM (OpenStreetMap)", "routes": routes,
             "note": "OSRM durations assume car speed; expect trucks to take ~1.4x longer."}
@@ -190,6 +193,33 @@ async def weather(lat: float, lon: float) -> dict:
         r.raise_for_status()
         js = r.json()
     return assess_weather(js)
+
+
+async def forecast_at(lat: float, lon: float, hours_ahead: float) -> dict:
+    """Weather expected at a point when the truck reaches it (hourly forecast, up to 48 h)."""
+    params = {"latitude": lat, "longitude": lon, "timezone": "Asia/Kolkata", "forecast_days": 2,
+              "hourly": "precipitation_probability,precipitation,visibility,weather_code,temperature_2m,wind_speed_10m"}
+    async with httpx.AsyncClient(headers=UA, timeout=TIMEOUT) as c:
+        r = await c.get("https://api.open-meteo.com/v1/forecast", params=params)
+        r.raise_for_status()
+        js = r.json()
+    return assess_hour(js, hours_ahead)
+
+
+def assess_hour(js: dict, hours_ahead: float) -> dict:
+    from datetime import datetime, timedelta, timezone
+    h = js.get("hourly", {})
+    times = h.get("time") or []
+    if not times:
+        return {"warnings": []}
+    target = (datetime.now(timezone(timedelta(hours=5, minutes=30))) + timedelta(hours=hours_ahead)).strftime("%Y-%m-%dT%H:00")
+    i = times.index(target) if target in times else min(len(times) - 1, max(0, int(hours_ahead)))
+    pick = lambda k: (h.get(k) or [None] * len(times))[i]
+    cur = {"weather_code": pick("weather_code"), "visibility": pick("visibility"), "precipitation": pick("precipitation"),
+           "temperature_2m": pick("temperature_2m"), "wind_speed_10m": pick("wind_speed_10m")}
+    out = assess_weather({"current": cur, "hourly": {"precipitation_probability": [pick("precipitation_probability")]}})
+    out["at"] = times[i]
+    return out
 
 
 def assess_weather(js: dict) -> dict:

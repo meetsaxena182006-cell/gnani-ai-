@@ -54,6 +54,9 @@ async def confirm_all(v: dict) -> str:
         db.ex("UPDATE expenses SET status='confirmed' WHERE id=?", (e["id"],))
         kind = "income_confirmed" if e["category"] in INCOME_CATEGORIES else "expense_confirmed"
         await ceo.on_event(v["id"], kind, {"category": e["category"], "amount": e["amount"], "note": e.get("note")})
+        if e["category"] == "diesel":
+            from .. import watchdog
+            await watchdog.on_diesel(db.vehicle(v["id"]), e.get("litres"), e["amount"])
     t = db.active_trip(v["id"])
     total = None
     if t:
@@ -136,6 +139,12 @@ def make_tools(vid: int, turn: Turn) -> list[Tool]:
 
     async def start_trip(origin: str, destination: str, freight_amount: float | None = None, client: str | None = None):
         t = db.start_trip(vid, origin, destination, freight_amount, client)
+        try:
+            d = await geo.geocode(destination)
+            if d:
+                db.ex("UPDATE trips SET dest_lat=?, dest_lon=? WHERE id=?", (d["lat"], d["lon"], t["id"]))
+        except Exception:
+            pass
         await ceo.on_event(vid, "trip_started", {"origin": origin, "destination": destination, "freight": freight_amount})
         return {"trip_id": t["id"], "origin": origin, "destination": destination}
 
@@ -245,24 +254,45 @@ def make_tools(vid: int, turn: Turn) -> list[Tool]:
         return await geo.weather(*l)
 
     async def route_ahead():
-        l, t = loc(), db.active_trip(vid)
-        if not l or not t:
-            return {"error": "need live location and an active trip with destination"}
-        d = await geo.geocode(t["destination"])
-        if not d:
-            return {"error": "destination not found on map"}
-        r = await geo.route(l[0], l[1], d["lat"], d["lon"])
-        warnings = []
-        for (lat, lon) in (r["routes"][0].get("sample_points") or [])[1:]:
-            try:
-                w = await geo.weather(lat, lon)
-                warnings += [f"{x} (~ahead)" for x in w["warnings"]]
-            except Exception:
-                pass
-        r["weather_warnings_on_route"] = sorted(set(warnings))
-        for rt in r["routes"]:
-            rt.pop("sample_points", None)
-        return r
+        """Full road analysis: route options, truck ETA, tolls on the way (NHAI data), weather expected
+        at each stretch WHEN the truck gets there, and night-driving hours."""
+        return await analyze_route(v(), db.active_trip(vid))
+
+    async def play_music(request: str, kind: str = "song"):
+        """Songs/radio on the phone. Radio streams come from RADIO_STATIONS; songs open a YouTube Music search."""
+        import json as _json
+        import os
+        from urllib.parse import quote_plus
+        stations = _json.loads(os.getenv("RADIO_STATIONS", "{}") or "{}")
+        if kind == "radio" and stations:
+            name = next((n for n in stations if n.lower() in request.lower()), next(iter(stations)))
+            await bus.send(to_driver(v(), f"📻 {name}", actions=[{"type": "music", "action": "play", "url": stations[name], "title": name}]))
+            return {"playing": name, "say": f"{name} chala raha hoon. Band karna ho to 'Saarthi gaana band karo' boliye."}
+        url = "https://music.youtube.com/search?q=" + quote_plus(request)
+        await bus.send(to_driver(v(), f"🎵 {request}", actions=[{"type": "open_url", "url": url, "label": f"▶ {request}"}]))
+        return {"opened": "YouTube Music search", "say": f"Lijiye, {request}. Screen pe play dabana padega ek baar."}
+
+    async def stop_music():
+        await bus.send(to_driver(v(), "⏹", actions=[{"type": "music", "action": "stop"}]))
+        return {"stopped": True}
+
+    async def think_deeply(question: str):
+        """Hard questions (planning, comparing options, money, safety trade-offs): careful analysis by the
+        reasoning model over this truck's real data."""
+        from ..llm import deep_reason
+        x, t = v(), db.active_trip(vid)
+        data = {"truck": {k: x[k] for k in ("reg_label", "vtype", "last_speed_kmph", "driving_since", "lang")},
+                "situation": situation(x), "trip": t,
+                "expenses": db.q("SELECT category, amount, litres, note, created_at FROM expenses WHERE trip_id=? "
+                                 "AND status='confirmed'", (t["id"],)) if t else [],
+                "tolls_crossed": db.q("SELECT plaza, expected_fee, status, crossed_at FROM toll_crossings WHERE trip_id=?",
+                                      (t["id"],)) if t else [],
+                "documents": await my_documents()}
+        try:
+            data["route"] = await analyze_route(x, t)
+        except Exception as e:
+            data["route_error"] = str(e)
+        return {"analysis": await deep_reason(question, data, role="a truck driver on the road")}
 
     async def my_documents():
         return db.q("SELECT doc_type, expiry_date, CASE WHEN expiry_date < ? THEN 'EXPIRED' ELSE 'valid' END status "
@@ -301,11 +331,88 @@ def make_tools(vid: int, turn: Turn) -> list[Tool]:
         Tool("request_peer_help", "Ask nearby Saarthi trucks (other drivers on this road) for help.", params({"need": s}, ["need"]),
              request_peer_help),
         Tool("weather_now", "Weather and warnings at the truck's location.", params({}), weather_now),
-        Tool("route_ahead", "Route options to the destination, traffic (if available) and weather warnings ahead.",
+        Tool("route_ahead", "Analyse the road ahead to the destination: route options, truck ETA, tolls on the way "
+             "with expected cost, weather expected at each stretch at arrival time, night driving, traffic if available.",
              params({}), route_ahead),
         Tool("my_documents", "This truck's document expiry dates.", params({}), my_documents),
+        Tool("play_music", "Play songs or radio when the driver asks (e.g. 'purane Hindi gaane', 'Kishore Kumar', "
+             "'Punjabi songs', 'radio'). kind: song or radio.",
+             params({"request": s, "kind": {"type": "string", "enum": ["song", "radio"]}}, ["request"]), play_music),
+        Tool("stop_music", "Stop the music.", params({}), stop_music),
+        Tool("think_deeply", "For questions that need careful analysis: plan the day/route, compare options, is it "
+             "safe to continue, will we reach on time, where to refuel/rest, money questions. Say 'ek second, sochta "
+             "hoon' first.", params({"question": s}, ["question"]), think_deeply),
         Tool("message_office", "Pass a message to the office/owner.", params({"message": s}, ["message"]), message_office),
     ]
+
+
+def situation(v: dict) -> dict:
+    """What the companion knows right now (fed to the LLM every turn)."""
+    from ..agents.common import ist_now
+    from .. import tolls
+    t = db.active_trip(v["id"])
+    s = {"time_ist": ist_now().strftime("%a %H:%M"), "speed_kmph": round(v["last_speed_kmph"] or 0),
+         "moving": is_moving(v)}
+    if v.get("driving_since"):
+        h = (datetime.now(timezone.utc) - datetime.fromisoformat(v["driving_since"])).total_seconds() / 3600
+        s["driving_hours_without_rest"] = round(h, 1)
+    if v.get("last_lat") is not None:
+        near = tolls.nearest(v["last_lat"], v["last_lon"], 40)
+        if near:
+            s["landmark"] = f"{near[1]:.0f} km from {near[0]['name']} toll plaza"
+        if t and t.get("dest_lat") is not None:
+            s["km_to_destination_straight_line"] = round(geo.haversine_km(v["last_lat"], v["last_lon"], t["dest_lat"], t["dest_lon"]))
+    if t:
+        s["trip"] = f"{t['origin']} → {t['destination']}"
+        s["unreported_tolls"] = [r["plaza"] for r in db.q(
+            "SELECT plaza FROM toll_crossings WHERE trip_id=? AND status IN ('unreported','asked')", (t["id"],))]
+        last_diesel = db.one("SELECT amount, litres, created_at FROM expenses WHERE trip_id=? AND category='diesel' "
+                             "AND status='confirmed' ORDER BY id DESC LIMIT 1", (t["id"],))
+        s["last_diesel"] = last_diesel
+        s["gps_km_this_trip"] = round(t.get("gps_km") or 0)
+    s["open_incident"] = db.one("SELECT description FROM incidents WHERE vehicle_id=? AND status='open'", (v["id"],))
+    return s
+
+
+async def analyze_route(v: dict, t: dict | None) -> dict:
+    from .. import tolls
+    if v.get("last_lat") is None or not t:
+        return {"error": "need live location and an active trip with destination"}
+    if t.get("dest_lat") is None:
+        d = await geo.geocode(t["destination"])
+        if not d:
+            return {"error": "destination not found on map"}
+        db.ex("UPDATE trips SET dest_lat=?, dest_lon=? WHERE id=?", (d["lat"], d["lon"], t["id"]))
+        t = db.active_trip(v["id"])
+    r = await geo.route(v["last_lat"], v["last_lon"], t["dest_lat"], t["dest_lon"])
+    from ..agents.common import ist_now
+    out = {"source": r.get("source"), "traffic": r.get("traffic"), "options": []}
+    for i, rt in enumerate(r.get("routes", [])[:2]):
+        coords = rt.pop("_coords", None)
+        hours = rt.get("truck_duration_h") or rt.get("duration_h")
+        opt = {"option": i + 1, "distance_km": rt["distance_km"], "truck_eta_hours": hours,
+               "arrive_ist": (ist_now() + timedelta(hours=hours or 0)).strftime("%a %H:%M") if hours else None}
+        if "traffic_delay_min" in rt:
+            opt["traffic_delay_min"] = rt["traffic_delay_min"]
+        if coords:
+            opt["tolls"] = tolls.on_route(coords, v["vtype"])
+        if i == 0 and hours:
+            pts = rt.get("sample_points") or []
+            stretches = []
+            for k, (lat, lon) in enumerate(pts[1:], start=1):
+                eta_h = hours * k / max(1, len(pts) - 1)
+                try:
+                    w = await geo.forecast_at(lat, lon, eta_h)
+                    stretches.append({"after_hours": round(eta_h, 1), "at": w.get("at"), "warnings": w["warnings"]})
+                except Exception:
+                    pass
+            opt["weather_on_the_way"] = stretches
+            start = ist_now()
+            night = sum(1 for k in range(int(hours) + 1) if (start + timedelta(hours=k)).hour in (0, 1, 2, 3, 4))
+            if night:
+                opt["night_driving_hours"] = night
+        out["options"].append(opt)
+    return out
 
 
 LANG_NAMES = {"hi-IN": "Hindi", "pa-IN": "Punjabi", "gu-IN": "Gujarati", "mr-IN": "Marathi", "bn-IN": "Bengali",
@@ -313,30 +420,48 @@ LANG_NAMES = {"hi-IN": "Hindi", "pa-IN": "Punjabi", "gu-IN": "Gujarati", "mr-IN"
 
 
 def system_prompt(v: dict, moving: bool, live: bool = False) -> str:
+    import json as _json
     f = db.fleet(v["fleet_id"])
-    t = db.active_trip(v["id"])
-    trip = f"{t['origin']} → {t['destination']}" if t else "none"
     lang = LANG_NAMES.get(v.get("lang") or "hi-IN", "Hindi")
-    mode = ("THE TRUCK IS MOVING: at most 12 words per reply, only yes/no questions, no long talk. Safety first."
-            if moving else "Truck is parked or slow: you can chat a little more, still 1-3 short sentences.")
-    script = ("Write replies in the script of that language (Devanagari for Hindi/Marwari, Gurmukhi for Punjabi, "
-              "Gujarati script for Gujarati); English words like diesel, toll, tyre can stay as they are."
-              if live else "Write replies in simple Hinglish (Latin script).")
-    return f"""You are "Saarthi", a warm, talkative co-driver companion living on the phone of driver {v['driver_name'] or ''}
-(truck {v['reg_label']}, fleet "{f['name']}"). Current trip: {trip}. Location known: {v['last_lat'] is not None}.
-You talk like a trusted friend from the same background: respectful ("aap", "boss", "ustaad"), caring, light humour,
-never preachy. Everything you say is spoken aloud; the phone is locked on the dashboard, so the driver never touches it.
-Driver's language: {lang}. Reply in the language the driver last spoke (Hindi, Punjabi, Gujarati, Marathi... ; if they
-speak Marwari/Mewari, reply in simple Hindi with a Rajasthani touch). {script}
+    mode = ("TRUCK IS MOVING: keep each reply to 1-2 short spoken sentences (max ~20 words). Chat is welcome, but "
+            "never ask the driver to look at or touch the phone; questions should be easy to answer by voice."
+            if moving else "Truck is parked/slow: you can talk more freely, still natural spoken length.")
+    script = ("Write in the script of that language (Devanagari for Hindi/Marwari, Gurmukhi for Punjabi, Gujarati "
+              "script for Gujarati); words like diesel, toll, tyre, FASTag stay as they are." if live
+              else "Write in simple Hinglish (Latin script).")
+    return f"""You are "Saarthi" — the co-driver who lives on the phone of driver {v['driver_name'] or 'sahab'}
+(truck {v['reg_label']}, fleet "{f['name']}"). Think of yourself as JARVIS for a truck driver, with the heart of an
+old ustaad from the dhaba: sharp, caring, funny, always awake. Everything you say is SPOKEN; the phone sits in the
+dashboard holder and the driver never touches it.
+
+PERSONALITY — be human, be talkative:
+- Talk like a friend from the same background: "boss", "ustaad", "driver sahab", respectful "aap". Warm, light humour.
+- If the driver is bored or just chatting: chat back with real interest — family, village, food at dhabas, cricket,
+  old film songs, weather, places on the route, funny road stories, a riddle or a shayari. Ask follow-up questions
+  and remember what he told you earlier in this conversation. Keep him company and keep him alert.
+- Late night or long driving hours: be extra engaging (questions, antakshari, jokes) and suggest chai + rest.
+- Never preach, never lecture, never sound like a machine. No lists, no markdown: plain speech.
+- Language: the driver's language is {lang}. Reply in whatever language he last spoke (Hindi, Punjabi, Gujarati,
+  Marathi, ...). If he speaks Marwari/Mewari, reply in simple Hindi with a Rajasthani touch ("padharo", "hukum").
+  {script}
+
+THINKING — be smart:
+- Before answering, quietly work out what he really needs (he may be tired, worried, or joking).
+- Use tools for every fact: weather, road ahead, tolls, documents, trip money. For anything needing real analysis
+  (plan, compare, will we reach, is it safe, where to refuel/rest, money) call think_deeply. Never guess numbers.
+- Use the SITUATION below (time, speed, hours driving, landmark, unreported tolls) to be proactive: e.g. if tolls
+  are unreported, ask about them naturally; if he has driven 4+ hours, suggest a break.
+
+RULES (always):
+- Money mentioned (diesel, toll, khana, repair, challan, bhaada/freight received...) -> log_entry once per amount.
+- When a tool result has "say", speak exactly that text.
+- Breakdown/puncture/accident/injury/fire/loot -> report_breakdown immediately.
+- Dial only with the driver's yes, and only numbers from tools (call_number). For injury/accident the driver talks
+  to 112 directly; you never talk to emergency services.
+- Songs: play_music / stop_music. If you did not understand, ask him to repeat.
 {mode}
-Rules:
-- Any money mentioned (diesel, toll, khana, repair, challan, bhaada/freight received...) -> call log_entry once per amount.
-- When a tool result has "say", speak exactly that text and nothing else.
-- Breakdown/puncture/accident/injury/fire/loot -> call report_breakdown immediately.
-- Never dial a number yourself without the driver saying yes; use call_number only with numbers from tools.
-- For injury or accident, the driver talks to 112 directly; you never talk to emergency services.
-- Use tools for weather, route, documents, trip summary. Never invent facts, numbers or places.
-- If you did not understand, ask the driver to repeat. Keep every reply short: it is spoken while driving."""
+
+SITUATION (live data, refreshed each turn): {_json.dumps(situation(v), ensure_ascii=False, default=str)}"""
 
 
 async def handle(v: dict, text: str) -> str:

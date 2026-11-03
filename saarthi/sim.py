@@ -53,7 +53,7 @@ async def amain() -> None:
         elif prefix == "loc":
             parts = text.split()
             v = db.vehicle_by_code("MW-T1")
-            fatigue.update_location(v["id"], float(parts[0]), float(parts[1]), float(parts[2]) if len(parts) > 2 else None)
+            await fatigue.location_update(v["id"], float(parts[0]), float(parts[1]), float(parts[2]) if len(parts) > 2 else None)
             print("  location updated")
         elif prefix in CHATS:
             await driver.handle(db.vehicle_by_code(CHATS[prefix][0]), text)

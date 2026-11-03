@@ -152,7 +152,11 @@ async def api_fleet(req: web.Request) -> web.Response:
                        "lon": v["last_lon"], "last_seen": v["last_seen"],
                        "trip": f"{t['origin']} → {t['destination']}" if t else None,
                        "companion": "live" if v["id"] in bus.live else "offline",
-                       "issue": inc["description"] if inc else None})
+                       "issue": inc["description"] if inc else None,
+                       "speed": round(v["last_speed_kmph"] or 0),
+                       "tolls_unreported": db.one("SELECT COUNT(*) n FROM toll_crossings WHERE vehicle_id=? AND status IN "
+                                                  "('unreported','asked')", (v["id"],))["n"],
+                       "trip_km": round(t["gps_km"] or 0) if t else None})
         out.append({"code": f["code"], "name": f["name"], "vehicles": vs})
     return web.json_response(out)
 

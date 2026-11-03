@@ -162,6 +162,12 @@ def _fleet_tools(fleet_id: int) -> list[Tool]:
                 return {"error": f"Could not find {'origin' if not o else 'destination'} on the map"}
             route_info = await geo.route(o["lat"], o["lon"], d["lat"], d["lon"])
             distance_km = route_info["routes"][0]["distance_km"]
+            coords = route_info["routes"][0].pop("_coords", None)
+            if coords and actual_tolls is None:
+                from .. import tolls
+                route_tolls = tolls.on_route(coords, vtype or default_vtype)
+                if route_tolls["plazas"]:
+                    actual_tolls = route_tolls["expected_total"]
         res = costing.estimate(costing.CostInputs(
             distance_km=distance_km, vtype=vtype or default_vtype,
             diesel_price=diesel_price or f["diesel_price"], load_tonnes=load_tonnes,
@@ -172,6 +178,11 @@ def _fleet_tools(fleet_id: int) -> list[Tool]:
         res["route"] = f"{origin} → {destination}"
         if route_info:
             res["route_source"] = route_info["source"]
+        if "route_tolls" in locals() and route_tolls["plazas"]:
+            res["toll_plazas_on_route"] = route_tolls
+            res["warnings"] = [w for w in res["warnings"] if not w.startswith("Tolls are an estimate")]
+            res["warnings"].append(f"Tolls from {len(route_tolls['plazas'])} NHAI plazas on the route at 2019-20 rates "
+                                   "(a minimum; today's are higher). Enter the FASTag amount for exact cost.")
         return res
 
     async def documents_expiring(days: int = 30):
@@ -214,9 +225,30 @@ def _fleet_tools(fleet_id: int) -> list[Tool]:
         db.ex("UPDATE fleets SET diesel_price=? WHERE id=?", (price, fleet_id))
         return {"diesel_price": price}
 
+    async def watch_report(hours: int = 24):
+        since = (datetime.now(timezone.utc) - timedelta(hours=hours)).isoformat(timespec="seconds")
+        events = db.q("SELECT v.code, w.kind, w.detail, w.created_at FROM watch_events w JOIN vehicles v ON v.id=w.vehicle_id "
+                      "WHERE v.fleet_id=? AND w.created_at>=? ORDER BY w.id DESC LIMIT 60", (fleet_id, since))
+        unreported = db.q("SELECT v.code, t.plaza, t.expected_fee, t.status FROM toll_crossings t JOIN vehicles v ON v.id=t.vehicle_id "
+                          "WHERE v.fleet_id=? AND t.status IN ('unreported','asked')", (fleet_id,))
+        return {"events": events, "tolls_not_yet_reported": unreported}
+
+    async def analyze_business(question: str):
+        from ..llm import deep_reason
+        data = {"fleet_status": await fleet_status(), "expenses_week": await expenses_report("week"),
+                "trips": [await trip_profit(v["code"]) for v in vehicles()],
+                "watchdog_24h": await watch_report(24), "documents_30d": await documents_expiring(30),
+                "open_incidents": await open_incidents(), "diesel_price": db.fleet(fleet_id)["diesel_price"]}
+        return {"analysis": await deep_reason(question, data, role="the owner (CEO view)")}
+
     s = {"type": "string"}
     n = {"type": "number"}
     return [
+        Tool("watch_report", "What the watchdog saw: tolls crossed/unreported, long stops, overspeed, route deviation, "
+             "offline trucks, diesel flags.", params({"hours": {"type": "integer"}}), watch_report),
+        Tool("analyze_business", "Careful analysis for strategic or tricky questions (which truck is losing money, "
+             "is this load worth it vs others, where are we leaking cost, plan for tomorrow).",
+             params({"question": s}, ["question"]), analyze_business),
         Tool("fleet_status", "Where every truck is, its trip, last update and any open incident.", params({}), fleet_status),
         Tool("expenses_report", "Confirmed expenses and freight received, grouped by truck and category.",
              params({"period": {"type": "string", "enum": ["today", "week", "all"]}, "vehicle_code": s}), expenses_report),
@@ -234,7 +266,8 @@ def _fleet_tools(fleet_id: int) -> list[Tool]:
         Tool("resolve_incident", "Mark a truck's open incidents as resolved.", params({"vehicle_code": s}, ["vehicle_code"]), resolve_incident),
         Tool("share_tracking_link", "Client tracking link for a truck's active trip (no GPS hardware needed).",
              params({"vehicle_code": s}, ["vehicle_code"]), share_tracking_link),
-        Tool("message_driver", "Send a spoken instruction to a driver.", params({"vehicle_code": s, "message": s},
+        Tool("message_driver", "Ask or tell a driver something through his companion (spoken in the cab).",
+             params({"vehicle_code": s, "message": s},
              ["vehicle_code", "message"]), message_driver),
         Tool("set_diesel_price", "Update the fleet's diesel price per litre used in costing.",
              params({"price": n}, ["price"]), set_diesel_price),
@@ -247,6 +280,8 @@ def system_prompt(fleet: dict) -> str:
 You talk to the owner{(' ' + fleet['owner_name']) if fleet.get('owner_name') else ''} in the language they use
 (Hindi, Hinglish or English). Be brief, precise and business-like. Today's diesel price: ₹{fleet['diesel_price']}/L.
 Trucks: {vs}
+You have eyes on every truck every minute: GPS, NHAI toll crossings, stops, speed, diesel, documents. Each truck has
+a Driver Agent (voice companion) you can reach with message_driver.
 Rules:
 - ALWAYS use tools for facts and numbers. Never invent money figures, locations or statuses.
 - For any freight quote or profit question call quote_freight / trip_profit and report the tool's numbers exactly,
@@ -284,6 +319,10 @@ async def daily_digest(fleet: dict) -> str:
     docs = db.q("SELECT v.reg_label, d.doc_type, d.expiry_date FROM documents d JOIN vehicles v ON v.id=d.vehicle_id "
                 "WHERE v.fleet_id=? AND d.expiry_date<=?", (fleet["id"], (date.today() + timedelta(days=30)).isoformat()))
     lines.append(f"Total spend today: {inr(total)} · Incidents: {inc}")
+    from .. import watchdog
+    watch = watchdog.report(fleet["id"], since)
+    if watch:
+        lines.append("👁️ Watchdog: " + " · ".join(watch))
     for d in docs:
         overdue = d["expiry_date"] < date.today().isoformat()
         lines.append(f"{'❌ EXPIRED' if overdue else '⏰ Expiring'}: {mask_reg(d['reg_label'])} {d['doc_type']} {d['expiry_date']}")

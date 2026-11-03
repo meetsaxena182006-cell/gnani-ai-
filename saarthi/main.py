@@ -17,13 +17,15 @@ from .web import build_app
 
 
 async def _fatigue_loop() -> None:
-    from . import fatigue
+    """Every minute: companion check-ins + CEO watchdog (tolls, long stops, offline trucks)."""
+    from . import fatigue, watchdog
     while True:
         await asyncio.sleep(60)
-        try:
-            await fatigue.tick()
-        except Exception:
-            logging.exception("fatigue tick failed")
+        for job in (fatigue.tick, watchdog.tick):
+            try:
+                await job()
+            except Exception:
+                logging.exception("%s failed", job.__module__)
 
 
 def check_config() -> list[str]:

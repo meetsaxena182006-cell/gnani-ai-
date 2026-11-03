@@ -17,10 +17,21 @@
 - Stays quiet while the driver talks to family or the helper. It responds only when addressed ("Saarthi …"), during an open conversation, or when it hears emergency or breakdown words.
 - Answers stay short and yes/no while the truck is moving.
 
+**CEO watchdog: nothing gets missed**
+- Every GPS fix is checked against **542 NHAI toll plazas** (government data). When a truck crosses tolls and the driver hasn't logged them, the CEO Agent gets the companion to ask: "Driver sahab, Paduna aur Khandi Obari toll cross kiya, kitna laga? FASTag ya cash?"
+- Also catches unexplained long stops (asks the driver if all is well), heading away from the destination, overspeeding (gentle warning), trucks gone offline (owner alerted), and diesel that doesn't add up (km driven vs litres logged).
+
+**Companion brain**
+- Gets fresh **situation awareness** every turn: time, speed, hours driving, nearest landmark, unreported tolls, last diesel fill.
+- A fast model handles conversation, and `think_deeply` sends hard questions ("raat tak pahunchenge?", "kahan rukein?") to a stronger reasoning model along with the truck's real data.
+- **Road analysis:** route options, truck-adjusted ETA, NHAI tolls on the way with expected cost, weather expected at each stretch *when the truck gets there*, and night-driving hours.
+- Chats when the driver is bored (cricket, family, dhaba food, old songs, shayari) and plays music: radio streams you configure, or a YouTube Music search. Music volume drops automatically while Saarthi speaks.
+
 **CEO Agent: always live on the server, reachable from the owner's laptop (`/office`) and Telegram voice notes**
 - Live map (street or satellite) of every truck, companion status, open issues, and a feed of agent activity.
 - "Sab gaadiyan kahan hain?", "aaj ka kharcha?", "kaun se documents expire ho rahe hain?"
-- **Freight quotes from a deterministic cost engine:** diesel + tolls + driver pay + maintenance + empty return leg → break-even, recommended quote, and profit on the client's offer.
+- **Freight quotes from a deterministic cost engine:** diesel + tolls (**NHAI plazas on the actual route**) + driver pay + maintenance + empty return leg → break-even, recommended quote, and profit on the client's offer.
+- `analyze_business` sends strategic questions to the reasoning model with the full fleet picture.
 - Escalation is decided by **rules in code**: emergencies are handed to the owner immediately, breakdowns trigger an alert, and routine entries go into the daily digest.
 - Client **tracking link** from the driver's phone GPS, with **no GPS hardware**. Optional **n8n** workflows: daily report, document expiry, expenses synced to Google Sheets.
 
@@ -49,6 +60,11 @@ To try it without voice, run `python -m saarthi.sim` for a text chat as the driv
 `eval/run_eval.py` measures word error rate and **amount accuracy** for each noise condition (fuel pump, moving cab, highway roadside, phone speaker), **with and without** the domain keyterms list (`data/keyterms.txt`, which includes Rajasthani place names). Recordings are made with the speakers' consent, stay private, and are never committed; only the aggregated results are published.
 
 Results will be filled in after the pilot.
+
+## Data sources
+- **Toll plazas:** NHAI Toll Information System, via the community snapshot [geohacker/toll-plazas-india](https://github.com/geohacker/toll-plazas-india) (30-06-2020, Government Open Data License – India). Only name, location and fee per vehicle class are kept. Rates are from 2019–20, so actual tolls today are higher: treat them as a minimum, and treat the FASTag or driver amount as the truth.
+- **Diesel price:** no free daily government API exists (PPAC data on data.gov.in is periodic), so the owner sets the price and the CEO Agent uses it.
+- **Freight rates:** the government doesn't publish lane-wise freight rates. Benchmarks will come from Saarthi's own trip data (see `docs/ROADMAP.md`).
 
 ## Honest limitations
 - The reasoning step uses OpenAI-compatible LLMs with ordered failover (`LLM_*`, then `LLM2_*`), for example a Gnani-provided LLM or a self-hosted Evon first and Gemini as the fallback. Speech is always Gnani.

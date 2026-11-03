@@ -44,6 +44,13 @@ CREATE TABLE IF NOT EXISTS mesh_requests (
   id INTEGER PRIMARY KEY, requester_vehicle INTEGER NOT NULL, helper_vehicle INTEGER,
   need TEXT, lat REAL, lon REAL, status TEXT DEFAULT 'open', created_at TEXT, asked TEXT
 );
+CREATE TABLE IF NOT EXISTS toll_crossings (
+  id INTEGER PRIMARY KEY, vehicle_id INTEGER NOT NULL, trip_id INTEGER, plaza TEXT, lat REAL, lon REAL,
+  expected_fee REAL, crossed_at TEXT, status TEXT DEFAULT 'unreported', asked_at TEXT, expense_id INTEGER
+);
+CREATE TABLE IF NOT EXISTS watch_events (
+  id INTEGER PRIMARY KEY, vehicle_id INTEGER, kind TEXT, detail TEXT, created_at TEXT
+);
 CREATE TABLE IF NOT EXISTS agent_log (
   id INTEGER PRIMARY KEY, ts TEXT, from_agent TEXT, to_agent TEXT, kind TEXT, payload TEXT
 );
@@ -71,7 +78,8 @@ def conn() -> sqlite3.Connection:
 
 def _migrate(c: sqlite3.Connection) -> None:
     """Add columns introduced after a DB was first created."""
-    wanted = {"vehicles": {"access_token": "TEXT"}, "mesh_requests": {"asked": "TEXT"}}
+    wanted = {"vehicles": {"access_token": "TEXT"}, "mesh_requests": {"asked": "TEXT"},
+              "trips": {"gps_km": "REAL DEFAULT 0", "dest_lat": "REAL", "dest_lon": "REAL"}}
     for table, cols in wanted.items():
         have = {r[1] for r in c.execute(f"PRAGMA table_info({table})")}
         for col, typ in cols.items():

@@ -72,6 +72,26 @@ async def _complete(messages: list[dict], tools: list["Tool"], agent_name: str):
     raise last_error
 
 
+async def deep_reason(question: str, data: dict, role: str) -> str:
+    """Slow, careful analysis by the strongest model (REASONING_* env, else the primary LLM).
+    The talking agent stays fast; this is called as a tool for questions that need thinking."""
+    import os
+    from openai import AsyncOpenAI
+    if _client is not None:
+        client, model = _client, settings.llm_model
+    elif os.getenv("REASONING_API_KEY") and os.getenv("REASONING_BASE_URL") and os.getenv("REASONING_MODEL"):
+        client = AsyncOpenAI(api_key=os.environ["REASONING_API_KEY"], base_url=os.environ["REASONING_BASE_URL"], timeout=60)
+        model = os.environ["REASONING_MODEL"]
+    else:
+        client, model, _ = providers()[0]
+    prompt = (f"You are the analyst for {role} of a small Indian trucking business. Think step by step, privately, "
+              "then answer in at most 5 short sentences of simple Hinglish with the key numbers. Use ONLY the data "
+              "given; if something needed is missing, say what is missing. Never invent numbers.\n\n"
+              f"QUESTION: {question}\n\nDATA (JSON): {json.dumps(data, ensure_ascii=False, default=str)[:12000]}")
+    resp = await client.chat.completions.create(model=model, messages=[{"role": "user", "content": prompt}], temperature=0.1)
+    return (resp.choices[0].message.content or "").strip()
+
+
 class Memory:
     """Short per-conversation memory (plain text turns only)."""
 
