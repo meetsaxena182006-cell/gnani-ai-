@@ -21,7 +21,8 @@ CREATE TABLE IF NOT EXISTS vehicles (
   mileage_loaded REAL DEFAULT 3.5, mileage_empty REAL DEFAULT 4.5,
   driver_name TEXT, driver_chat_id INTEGER, lang TEXT DEFAULT 'hi-IN',
   last_lat REAL, last_lon REAL, last_speed_kmph REAL, last_seen TEXT,
-  driving_since TEXT, last_fatigue_ack TEXT, missed_checks INTEGER DEFAULT 0, access_token TEXT
+  driving_since TEXT, last_fatigue_ack TEXT, missed_checks INTEGER DEFAULT 0, access_token TEXT,
+  fastag INTEGER DEFAULT 1
 );
 CREATE TABLE IF NOT EXISTS trips (
   id INTEGER PRIMARY KEY, vehicle_id INTEGER NOT NULL REFERENCES vehicles(id),
@@ -78,7 +79,7 @@ def conn() -> sqlite3.Connection:
 
 def _migrate(c: sqlite3.Connection) -> None:
     """Add columns introduced after a DB was first created."""
-    wanted = {"vehicles": {"access_token": "TEXT"}, "mesh_requests": {"asked": "TEXT"},
+    wanted = {"vehicles": {"access_token": "TEXT", "fastag": "INTEGER DEFAULT 1"}, "mesh_requests": {"asked": "TEXT"},
               "trips": {"gps_km": "REAL DEFAULT 0", "dest_lat": "REAL", "dest_lon": "REAL"}}
     for table, cols in wanted.items():
         have = {r[1] for r in c.execute(f"PRAGMA table_info({table})")}

@@ -29,7 +29,9 @@ def test_toll_data_and_class_rates():
 
 
 async def test_unreported_tolls_make_ceo_ask_driver(fresh):
+    """Cash-paying truck (no FASTag): the CEO asks the driver through the companion."""
     watchdog._stopped_since.clear()
+    db.ex("UPDATE vehicles SET fastag=0 WHERE code='MW-T1'")
     await drive([(24.40, 73.70), (24.2714, 73.6738), (24.10, 73.65), (23.9936, 73.6279), (23.90, 73.60)])
     crossings = db.q("SELECT plaza, status, expected_fee FROM toll_crossings ORDER BY id")
     assert [c["plaza"] for c in crossings] == ["Paduna", "Khandi Obari"]

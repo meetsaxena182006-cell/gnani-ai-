@@ -19,6 +19,9 @@
 
 **CEO watchdog: nothing gets missed**
 - Every GPS fix is checked against **542 NHAI toll plazas** (government data). When a truck crosses tolls and the driver hasn't logged them, the CEO Agent gets the companion to ask: "Driver sahab, Paduna aur Khandi Obari toll cross kiya, kitna laga? FASTag ya cash?"
+- **FASTag trucks:** tolls are logged automatically when the GPS shows a plaza crossing, so the driver is never asked. The estimate is replaced with the **actual deduction** when the FASTag statement (CSV upload) or debit SMS (forwarded to `/api/fastag/sms`) arrives. A deduction with **no GPS crossing** is flagged to the owner as a possible wrong or double charge to dispute.
+- **Fuel pumps:** when the truck stops at a fuel station (OpenStreetMap) and drives off without logging diesel, the companion asks "Demo Fuels pump pe 12 minute ruke the, diesel bharwaya? kitne litre, kitne ka?".
+- Everything (spoken entries, automatic FASTag tolls, freight received) flows into Google Sheets every hour via n8n.
 - Also catches unexplained long stops (asks the driver if all is well), heading away from the destination, overspeeding (gentle warning), trucks gone offline (owner alerted), and diesel that doesn't add up (km driven vs litres logged).
 
 **Companion brain**

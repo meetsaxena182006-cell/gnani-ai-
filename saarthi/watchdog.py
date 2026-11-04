@@ -40,6 +40,19 @@ _min_dest_km: dict[int, float] = {}
 _asked_away: dict[int, datetime] = {}
 _last_speed_warn: dict[int, datetime] = {}
 _offline_alerted: set[int] = set()
+_pump_stop: dict[int, dict] = {}       # vehicle_id -> {"name", "since", "lat", "lon"}
+_pump_checked: dict[int, tuple] = {}   # vehicle_id -> rounded position already looked up during this stop
+PUMP_RADIUS_M = 150
+PUMP_MIN_STOP_MIN = 4
+
+
+async def _pump_here(lat: float, lon: float) -> dict | None:
+    try:
+        res = await geo.nearby("fuel", lat, lon, radius_m=PUMP_RADIUS_M, limit=1)
+    except Exception as e:
+        log.warning("fuel lookup failed: %s", e)
+        return None
+    return res[0] if res else None
 
 
 def _now() -> datetime:
@@ -75,16 +88,39 @@ async def on_location(v_before: dict, v_after: dict, speed_kmph: float | None) -
         if recent:
             continue
         fee = tolls.expected_fee(p, v_after["vtype"])
-        db.ex("INSERT INTO toll_crossings(vehicle_id,trip_id,plaza,lat,lon,expected_fee,crossed_at) VALUES(?,?,?,?,?,?,?)",
-              (vid, t["id"] if t else None, p["name"], p["lat"], p["lon"], fee, db.now()))
+        cid = db.ex("INSERT INTO toll_crossings(vehicle_id,trip_id,plaza,lat,lon,expected_fee,crossed_at) VALUES(?,?,?,?,?,?,?)",
+                    (vid, t["id"] if t else None, p["name"], p["lat"], p["lon"], fee, db.now()))
         event(vid, "toll_crossed", f"{p['name']} (expected ≥ {inr(fee)})" if fee else p["name"])
+        if v_after.get("fastag", 1) and fee:
+            # FASTag pays automatically: log the toll now (estimate), replace with the actual deduction when the
+            # FASTag statement / SMS arrives (see fastag.py). The driver is not disturbed.
+            eid = db.ex("INSERT INTO expenses(vehicle_id,trip_id,category,amount,note,lat,lon,status,created_at) "
+                        "VALUES(?,?, 'toll', ?, ?, ?, ?, 'confirmed', ?)",
+                        (vid, t["id"] if t else None, fee, f"FASTag {p['name']} (estimated)", p["lat"], p["lon"], db.now()))
+            db.ex("UPDATE toll_crossings SET status='fastag_estimated', expense_id=? WHERE id=?", (eid, cid))
     # stops
     moving = speed_kmph is not None and speed_kmph >= settings.moving_speed_kmph
     if moving:
         _stopped_since.pop(vid, None)
         _asked_stop.discard(vid)
+        _pump_checked.pop(vid, None)
+        stop = _pump_stop.pop(vid, None)
+        if stop and t and _now() - stop["since"] >= timedelta(minutes=PUMP_MIN_STOP_MIN):
+            filled = db.one("SELECT id FROM expenses WHERE vehicle_id=? AND category='diesel' AND created_at>=? "
+                            "AND status IN ('pending','confirmed')", (vid, stop["since"].isoformat(timespec="seconds")))
+            mins = int((_now() - stop["since"]).total_seconds() // 60)
+            event(vid, "fuel_stop", f"{stop['name']} ({mins} min){'' if filled else ' — diesel not logged'}")
+            if not filled:
+                await ask_driver(v_after, f"Boss, {stop['name']} pump pe {mins} minute ruke the. Diesel bharwaya? "
+                                          f"Kitne litre aur kitne rupaye ka?", "fuel")
     else:
         _stopped_since.setdefault(vid, _now())
+        key = (round(cur[0], 3), round(cur[1], 3))
+        if vid not in _pump_stop and _pump_checked.get(vid) != key:
+            _pump_checked[vid] = key
+            pump = await _pump_here(*cur)
+            if pump:
+                _pump_stop[vid] = {"name": pump["name"], "since": _stopped_since[vid], "lat": pump["lat"], "lon": pump["lon"]}
     # overspeed
     if speed_kmph and speed_kmph > OVERSPEED_KMPH:
         last = _last_speed_warn.get(vid)
@@ -143,7 +179,7 @@ async def _toll_check(v: dict, t: dict) -> None:
     vid = v["id"]
     # reported tolls clear earlier crossings (driver may report several plazas in one amount)
     last_toll = db.one("SELECT id, created_at FROM expenses WHERE vehicle_id=? AND category='toll' AND status='confirmed' "
-                       "ORDER BY id DESC LIMIT 1", (vid,))
+                       "AND COALESCE(note,'') NOT LIKE 'FASTag%' ORDER BY id DESC LIMIT 1", (vid,))
     if last_toll:
         db.ex("UPDATE toll_crossings SET status='reported', expense_id=? WHERE vehicle_id=? AND status IN ('unreported','asked') "
               "AND crossed_at<=?", (last_toll["id"], vid, last_toll["created_at"]))

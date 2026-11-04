@@ -170,6 +170,34 @@ async def api_ceo_chat(req: web.Request) -> web.Response:
     return web.json_response({"reply": await ceo.handle_owner(f, body["text"])})
 
 
+async def api_fastag_statement(req: web.Request) -> web.Response:
+    """Owner uploads the FASTag statement (CSV) from the bank / IHMCL portal."""
+    _auth(req)
+    from . import fastag
+    if req.content_type.startswith("multipart/"):
+        form = await req.post()
+        f = form.get("file")
+        text = f.file.read().decode("utf-8-sig", errors="replace") if hasattr(f, "file") else str(f or "")
+    else:
+        text = (await req.read()).decode("utf-8-sig", errors="replace")
+    rows = fastag.parse_statement(text)
+    results = [await fastag.reconcile(r) for r in rows]
+    summary = {k: sum(1 for r in results if r["status"] == k) for k in ("matched", "suspect", "unknown_vehicle")}
+    return web.json_response({"rows": len(rows), **summary, "results": results})
+
+
+async def api_fastag_sms(req: web.Request) -> web.Response:
+    """FASTag debit SMS forwarded from the owner's phone (SMS-forwarder app -> this webhook)."""
+    _auth(req)
+    from . import fastag
+    body = await req.json()
+    d = fastag.parse_sms(body.get("text", ""))
+    if not d:
+        return web.json_response({"status": "not_a_fastag_debit"})
+    default = fastag.find_vehicle(body.get("vehicle", "")) if body.get("vehicle") else None
+    return web.json_response(await fastag.reconcile(d, default_vehicle=default))
+
+
 async def health(req: web.Request) -> web.Response:
     return web.json_response({"ok": True, "live_companions": len(bus.live)})
 
@@ -191,6 +219,8 @@ def build_app() -> web.Application:
         web.get("/api/ice", api_ice),
         web.get("/api/fleet", api_fleet),
         web.post("/api/ceo/chat", api_ceo_chat),
+        web.post("/api/fastag/statement", api_fastag_statement),
+        web.post("/api/fastag/sms", api_fastag_sms),
         web.static("/static", STATIC),
     ])
     return app
