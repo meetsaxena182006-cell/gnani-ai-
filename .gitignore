@@ -4,6 +4,7 @@ __pycache__/
 *.pyc
 data/*.db
 data/audio/
+data/pod/
 eval/recordings/*
 !eval/recordings/.gitkeep
 eval/results/

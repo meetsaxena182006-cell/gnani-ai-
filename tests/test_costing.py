@@ -7,13 +7,13 @@ from saarthi.agents.common import inr
 def test_quote_breakdown_matches_hand_calculation():
     r = costing.estimate(costing.CostInputs(distance_km=350, vtype="truck_10w", diesel_price=90,
                                             actual_tolls=1500, target_margin_pct=15))
-    # diesel 350/3.5=100 L * 90 = 9000; crew 1 day * 1200; maint 350*6=2100; misc 300
+    # diesel 350/3.5=100 L * 90 = 9000; crew 1 day * 1200; maint 350*6=2100; misc 300; fixed 1 day * 2800
     assert r["diesel_litres"] == 100
     assert r["cost_lines"] == {"diesel": 9000, "tolls": 1500, "driver_and_crew": 1200,
-                               "maintenance_tyres": 2100, "misc_loading": 300}
-    assert r["total_cost"] == 14100
-    assert r["break_even_freight"] == 14100
-    assert r["recommended_quote"] == 16600  # 14100/0.85=16588 -> rounded up to 100
+                               "maintenance_tyres": 2100, "misc_loading": 300, "fixed_emi_insurance_permit": 2800}
+    assert r["total_cost"] == 16900
+    assert r["break_even_freight"] == 16900
+    assert r["recommended_quote"] == 19900  # 16900/0.85=19882 -> rounded up to 100
 
 
 def test_empty_return_and_offer_loss_warning():

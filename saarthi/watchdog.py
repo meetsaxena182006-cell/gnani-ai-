@@ -17,7 +17,7 @@ from __future__ import annotations
 import logging
 from datetime import datetime, timedelta, timezone
 
-from . import db, geo, tolls
+from . import business, db, geo, tolls
 from .agents import ceo
 from .agents.common import inr
 from .bus import bus, to_driver
@@ -81,6 +81,10 @@ async def on_location(v_before: dict, v_after: dict, speed_kmph: float | None) -
         seg = geo.haversine_km(prev[0], prev[1], cur[0], cur[1])
         if seg < 50:  # ignore GPS jumps
             db.ex("UPDATE trips SET gps_km=COALESCE(gps_km,0)+? WHERE id=?", (seg, t["id"]))
+    if prev:
+        seg_all = geo.haversine_km(prev[0], prev[1], cur[0], cur[1])
+        if seg_all < 50:
+            business.add_km(vid, seg_all)
     # tolls
     for p in tolls.crossed(prev, cur):
         recent = db.one("SELECT id FROM toll_crossings WHERE vehicle_id=? AND plaza=? AND crossed_at>=?",
@@ -121,6 +125,8 @@ async def on_location(v_before: dict, v_after: dict, speed_kmph: float | None) -
             pump = await _pump_here(*cur)
             if pump:
                 _pump_stop[vid] = {"name": pump["name"], "since": _stopped_since[vid], "lat": pump["lat"], "lon": pump["lon"]}
+    # detention: arrival/departure at loading & unloading sites
+    await business.on_location(v_after, t, moving)
     # overspeed
     if speed_kmph and speed_kmph > OVERSPEED_KMPH:
         last = _last_speed_warn.get(vid)

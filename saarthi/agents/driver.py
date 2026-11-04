@@ -54,6 +54,9 @@ async def confirm_all(v: dict) -> str:
         db.ex("UPDATE expenses SET status='confirmed' WHERE id=?", (e["id"],))
         kind = "income_confirmed" if e["category"] in INCOME_CATEGORIES else "expense_confirmed"
         await ceo.on_event(v["id"], kind, {"category": e["category"], "amount": e["amount"], "note": e.get("note")})
+        if e["category"] == "advance_to_driver":
+            from .. import business
+            business.ledger_add(v["id"], "advance", e["amount"], e.get("note") or "advance on trip")
         if e["category"] == "diesel":
             from .. import watchdog
             await watchdog.on_diesel(db.vehicle(v["id"]), e.get("litres"), e["amount"])
@@ -137,8 +140,12 @@ def make_tools(vid: int, turn: Turn) -> list[Tool]:
         turn.new_pending = True
         return {"status": "pending_confirmation", "say": confirm_prompt(pending_entries(vid))}
 
-    async def start_trip(origin: str, destination: str, freight_amount: float | None = None, client: str | None = None):
+    async def start_trip(origin: str, destination: str, freight_amount: float | None = None, client: str | None = None,
+                         weight_t: float | None = None):
         t = db.start_trip(vid, origin, destination, freight_amount, client)
+        x = v()
+        if x["last_lat"] is not None:  # truck is at the loading point when the trip starts
+            db.ex("UPDATE trips SET origin_lat=?, origin_lon=?, weight_t=? WHERE id=?", (x["last_lat"], x["last_lon"], weight_t, t["id"]))
         try:
             d = await geo.geocode(destination)
             if d:
@@ -258,6 +265,44 @@ def make_tools(vid: int, turn: Turn) -> list[Tool]:
         at each stretch WHEN the truck gets there, and night-driving hours."""
         return await analyze_route(v(), db.active_trip(vid))
 
+    async def delivered(receiver: str | None = None):
+        from .. import business
+        return await business.delivered(v(), receiver)
+
+    async def at_site(event: str):
+        from .. import business
+        return await business.mark_site(v(), event)
+
+    async def set_eway_bill(number: str, valid_until: str | None = None, distance_km: float | None = None):
+        """E-way bill number + validity (given, or computed from distance: 1 day per 200 km)."""
+        from .. import business
+        t = db.active_trip(vid)
+        if not t:
+            return {"error": "no active trip"}
+        if valid_until:
+            until = datetime.fromisoformat(valid_until)
+            if until.tzinfo is None:
+                from .common import IST
+                until = until.replace(tzinfo=IST)
+        else:
+            km = distance_km or ((geo.haversine_km(t["origin_lat"], t["origin_lon"], t["dest_lat"], t["dest_lon"]) * 1.25)
+                                 if t.get("origin_lat") is not None and t.get("dest_lat") is not None else None)
+            if not km:
+                return {"error": "need valid_until or distance_km"}
+            until = business.eway_validity(datetime.now(timezone.utc), km)
+        db.ex("UPDATE trips SET eway_bill=?, eway_valid_until=? WHERE id=?", (number, until.isoformat(timespec="minutes"), t["id"]))
+        return {"eway_bill": number, "valid_until": until.isoformat(timespec="minutes")}
+
+    async def my_earnings():
+        from .. import business
+        b = business.driver_balance(vid)
+        return {**b, "say": f"Aapka abhi tak {inr(b['earned'])} bana, {inr(b['advances'])} advance liya, "
+                            f"{inr(b['paid'])} mila. Malik ki taraf {inr(b['balance_due_to_driver'])} baaki hai."}
+
+    async def service_done(kind: str = "service"):
+        from .. import business
+        return business.service_done(vid, kind)
+
     async def play_music(request: str, kind: str = "song"):
         """Songs/radio on the phone. Radio streams come from RADIO_STATIONS; songs open a YouTube Music search."""
         import json as _json
@@ -313,8 +358,9 @@ def make_tools(vid: int, turn: Turn) -> list[Tool]:
              "only after the driver confirms. Call once per amount. Amount in rupees as a number.",
              params({"category": {"type": "string", "enum": EXPENSE_CATEGORIES + INCOME_CATEGORIES},
                      "amount": n, "litres": n, "note": s}, ["category", "amount"]), log_entry),
-        Tool("start_trip", "Start a new trip (origin, destination, optional total freight and client).",
-             params({"origin": s, "destination": s, "freight_amount": n, "client": s}, ["origin", "destination"]), start_trip),
+        Tool("start_trip", "Start a new trip (origin, destination, optional total freight, client, weight in tonnes).",
+             params({"origin": s, "destination": s, "freight_amount": n, "client": s, "weight_t": n}, ["origin", "destination"]),
+             start_trip),
         Tool("end_trip", "Close the current trip (delivered).", params({}), end_trip),
         Tool("trip_summary", "Expenses so far on this trip.", params({}), trip_summary),
         Tool("report_breakdown", "Driver reports a breakdown, puncture, accident, injury, theft or any emergency. "
@@ -335,6 +381,16 @@ def make_tools(vid: int, turn: Turn) -> list[Tool]:
              "with expected cost, weather expected at each stretch at arrival time, night driving, traffic if available.",
              params({}), route_ahead),
         Tool("my_documents", "This truck's document expiry dates.", params({}), my_documents),
+        Tool("delivered", "Driver says the goods are delivered/unloaded ('maal utar gaya', 'delivery ho gayi'). Starts "
+             "the invoice; asks for a POD photo.", params({"receiver": s}), delivered),
+        Tool("at_site", "Driver reached or left the loading/unloading point (for waiting-time / detention proof).",
+             params({"event": {"type": "string", "enum": ["arrived", "left"]}}, ["event"]), at_site),
+        Tool("set_eway_bill", "Save the trip's e-way bill number and validity (valid_until as ISO date-time, or distance_km "
+             "to compute it).", params({"number": s, "valid_until": s, "distance_km": n}, ["number"]), set_eway_bill),
+        Tool("my_earnings", "Driver asks how much he has earned / how much the owner owes him (salary, bata, advances).",
+             params({}), my_earnings),
+        Tool("service_done", "Driver says the truck's service or tyre work was done.",
+             params({"kind": {"type": "string", "enum": ["service", "tyre"]}}), service_done),
         Tool("play_music", "Play songs or radio when the driver asks (e.g. 'purane Hindi gaane', 'Kishore Kumar', "
              "'Punjabi songs', 'radio'). kind: song or radio.",
              params({"request": s, "kind": {"type": "string", "enum": ["song", "radio"]}}, ["request"]), play_music),

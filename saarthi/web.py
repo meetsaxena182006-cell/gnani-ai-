@@ -198,6 +198,45 @@ async def api_fastag_sms(req: web.Request) -> web.Response:
     return web.json_response(await fastag.reconcile(d, default_vehicle=default))
 
 
+POD_DIR = Path(__file__).resolve().parent.parent / "data" / "pod"
+MAX_POD_BYTES = 8 * 1024 * 1024
+
+
+async def api_pod(req: web.Request) -> web.Response:
+    """Driver's phone uploads the POD photo (receiving copy / bilty) for the delivered trip."""
+    v = db.vehicle_by_token(req.query.get("v", ""), req.query.get("k", ""))
+    if not v:
+        raise web.HTTPUnauthorized()
+    from . import business
+    trip = db.one("SELECT * FROM trips WHERE vehicle_id=? AND delivered_at IS NOT NULL ORDER BY id DESC LIMIT 1", (v["id"],))
+    if not trip:
+        return web.json_response({"error": "no delivered trip"}, status=400)
+    form = await req.post()
+    f = form.get("file")
+    if not hasattr(f, "file"):
+        return web.json_response({"error": "file missing"}, status=400)
+    data = f.file.read(MAX_POD_BYTES + 1)
+    if len(data) > MAX_POD_BYTES:
+        return web.json_response({"error": "photo too large"}, status=413)
+    POD_DIR.mkdir(parents=True, exist_ok=True)
+    name = f"trip{trip['id']}_{int(__import__('time').time())}.jpg"
+    (POD_DIR / name).write_bytes(data)
+    inv = business.pod_received(trip["id"], name)
+    if inv:
+        from .agents import ceo
+        o = ceo.owner_out(db.fleet(v["fleet_id"]), "🧾 POD received. Invoice ready to send:\n\n" + business.invoice_text(inv))
+        if o:
+            await bus.send(o)
+    return web.json_response({"ok": True, "invoice": inv["id"] if inv else None})
+
+
+async def api_business(req: web.Request) -> web.Response:
+    _auth(req)
+    from . import business
+    f = db.one("SELECT * FROM fleets WHERE upper(code)=upper(?)", (req.query.get("fleet", ""),)) or db.one("SELECT * FROM fleets")
+    return web.json_response({"fleet": f["code"], **business.summary(f["id"])})
+
+
 async def health(req: web.Request) -> web.Response:
     return web.json_response({"ok": True, "live_companions": len(bus.live)})
 
@@ -221,6 +260,8 @@ def build_app() -> web.Application:
         web.post("/api/ceo/chat", api_ceo_chat),
         web.post("/api/fastag/statement", api_fastag_statement),
         web.post("/api/fastag/sms", api_fastag_sms),
+        web.post("/api/pod", api_pod),
+        web.get("/api/business", api_business),
         web.static("/static", STATIC),
     ])
     return app

@@ -18,13 +18,14 @@ class VehicleProfile:
     toll_per_km: float        # rough NH average for the axle class; override with real toll
     maintenance_per_km: float  # tyres + service + repairs reserve
     km_per_day: float
+    fixed_per_day: float       # EMI/finance + insurance + permits + road tax + parking, spread per working day
 
 
 PROFILES: dict[str, VehicleProfile] = {
-    "tempo_lcv": VehicleProfile("Tempo / LCV (~2.5 t)", 2.5, 9.0, 11.0, 1.7, 2.5, 380),
-    "truck_6w": VehicleProfile("6-wheeler (~9 t)", 9.0, 5.0, 6.0, 3.6, 4.0, 350),
-    "truck_10w": VehicleProfile("10-wheeler (~16 t)", 16.0, 3.5, 4.5, 3.9, 6.0, 350),
-    "trailer": VehicleProfile("Trailer (~28 t)", 28.0, 2.8, 3.5, 5.8, 8.0, 330),
+    "tempo_lcv": VehicleProfile("Tempo / LCV (~2.5 t)", 2.5, 9.0, 11.0, 1.7, 2.5, 380, 900),
+    "truck_6w": VehicleProfile("6-wheeler (~9 t)", 9.0, 5.0, 6.0, 3.6, 4.0, 350, 1800),
+    "truck_10w": VehicleProfile("10-wheeler (~16 t)", 16.0, 3.5, 4.5, 3.9, 6.0, 350, 2800),
+    "trailer": VehicleProfile("Trailer (~28 t)", 28.0, 2.8, 3.5, 5.8, 8.0, 330, 3800),
 }
 
 
@@ -44,6 +45,7 @@ class CostInputs:
     broker_commission_pct: float = 0.0
     target_margin_pct: float = 15.0
     offered_freight: float | None = None
+    fixed_per_day: float | None = None    # owner's real EMI+insurance+permit per day; default from the profile
 
 
 def _r(x: float) -> float:
@@ -73,8 +75,9 @@ def estimate(inp: CostInputs) -> dict:
     crew = days * (inp.driver_salary_per_day + inp.driver_bata_per_day + inp.helper_per_day)
     maintenance = total_km * p.maintenance_per_km
     misc = days * inp.misc_per_day + inp.loading_unloading
+    fixed = days * (inp.fixed_per_day if inp.fixed_per_day is not None else p.fixed_per_day)
 
-    direct_cost = diesel + tolls + crew + maintenance + misc
+    direct_cost = diesel + tolls + crew + maintenance + misc + fixed
     commission_rate = inp.broker_commission_pct / 100
     margin_rate = inp.target_margin_pct / 100
     if commission_rate + margin_rate >= 1:
@@ -96,6 +99,7 @@ def estimate(inp: CostInputs) -> dict:
             "driver_and_crew": _r(crew),
             "maintenance_tyres": _r(maintenance),
             "misc_loading": _r(misc),
+            "fixed_emi_insurance_permit": _r(fixed),
         },
         "total_cost": _r(direct_cost),
         "cost_per_km": _r(direct_cost / inp.distance_km),
@@ -110,6 +114,7 @@ def estimate(inp: CostInputs) -> dict:
             "toll_source": "actual" if inp.actual_tolls is not None else f"estimate ₹{p.toll_per_km}/km",
             "maintenance_per_km": p.maintenance_per_km,
             "km_per_day": p.km_per_day,
+            "fixed_per_day": inp.fixed_per_day if inp.fixed_per_day is not None else p.fixed_per_day,
         },
     }
     if inp.load_tonnes:

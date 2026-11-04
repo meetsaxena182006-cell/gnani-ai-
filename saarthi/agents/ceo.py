@@ -151,7 +151,8 @@ def _fleet_tools(fleet_id: int) -> list[Tool]:
                             load_tonnes: float | None = None, offered_freight: float | None = None,
                             actual_tolls: float | None = None, empty_return_fraction: float = 0.0,
                             diesel_price: float | None = None, target_margin_pct: float = 15.0,
-                            distance_km: float | None = None, broker_commission_pct: float = 0.0):
+                            distance_km: float | None = None, broker_commission_pct: float = 0.0,
+                            fixed_per_day: float | None = None):
         f = db.fleet(fleet_id)
         vs = vehicles()
         default_vtype = vs[0]["vtype"] if vs else "truck_10w"
@@ -171,7 +172,7 @@ def _fleet_tools(fleet_id: int) -> list[Tool]:
         res = costing.estimate(costing.CostInputs(
             distance_km=distance_km, vtype=vtype or default_vtype,
             diesel_price=diesel_price or f["diesel_price"], load_tonnes=load_tonnes,
-            actual_tolls=actual_tolls, empty_return_fraction=empty_return_fraction,
+            actual_tolls=actual_tolls, empty_return_fraction=empty_return_fraction, fixed_per_day=fixed_per_day,
             target_margin_pct=target_margin_pct, offered_freight=offered_freight,
             broker_commission_pct=broker_commission_pct,
         ))
@@ -236,14 +237,104 @@ def _fleet_tools(fleet_id: int) -> list[Tool]:
     async def analyze_business(question: str):
         from ..llm import deep_reason
         data = {"fleet_status": await fleet_status(), "expenses_week": await expenses_report("week"),
+                "business": business.summary(fleet_id),
                 "trips": [await trip_profit(v["code"]) for v in vehicles()],
                 "watchdog_24h": await watch_report(24), "documents_30d": await documents_expiring(30),
                 "open_incidents": await open_incidents(), "diesel_price": db.fleet(fleet_id)["diesel_price"]}
         return {"analysis": await deep_reason(question, data, role="the owner (CEO view)")}
 
+    # ---- business side ----
+    from .. import business
+
+    async def receivables():
+        return business.receivables(fleet_id)
+
+    async def payment_received(party: str, amount: float):
+        return business.record_payment(fleet_id, party, amount)
+
+    async def invoice(invoice_id: int):
+        inv = db.one("SELECT * FROM invoices WHERE id=? AND fleet_id=?", (invoice_id, fleet_id))
+        return {"text": business.invoice_text(inv)} if inv else {"error": "invoice not found"}
+
+    async def detention_report(days: int = 30):
+        since = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat(timespec="seconds")
+        return db.q("SELECT v.code, s.site, s.arrived_at, s.left_at, s.waited_h, s.detention_amount FROM site_visits s "
+                    "JOIN vehicles v ON v.id=s.vehicle_id WHERE v.fleet_id=? AND s.arrived_at>=? ORDER BY s.id DESC",
+                    (fleet_id, since))
+
+    async def set_terms(detention_free_hours: float | None = None, detention_per_day: float | None = None,
+                        payment_terms_days: int | None = None):
+        for col, val in (("detention_free_h", detention_free_hours), ("detention_per_day", detention_per_day),
+                         ("payment_terms_days", payment_terms_days)):
+            if val is not None:
+                db.ex(f"UPDATE fleets SET {col}=? WHERE id=?", (val, fleet_id))
+        f = db.fleet(fleet_id)
+        return {k: f[k] for k in ("detention_free_h", "detention_per_day", "payment_terms_days")}
+
+    async def driver_account(vehicle_code: str, pay_amount: float | None = None, kind: str = "paid"):
+        """Driver's ledger; optionally record a payment / advance / bonus to the driver."""
+        v = find_vehicle(vehicle_code)
+        if pay_amount:
+            if kind not in ("paid", "advance", "bonus"):
+                raise ValueError("kind must be paid, advance or bonus")
+            business.ledger_add(v["id"], kind, pay_amount, "by owner")
+        return {"driver": v["driver_name"], **business.driver_balance(v["id"])}
+
+    async def service_record(vehicle_code: str, kind: str = "service", odometer_km: float | None = None):
+        return business.service_done(find_vehicle(vehicle_code)["id"], kind, odometer_km)
+
+    async def challans(vehicle_code: str | None = None, add_challan_no: str | None = None, amount: float | None = None,
+                       offence: str | None = None, mark_paid: str | None = None):
+        if add_challan_no and vehicle_code:
+            business.add_challan(find_vehicle(vehicle_code)["id"], add_challan_no, amount or 0, offence or "")
+        if mark_paid:
+            db.ex("UPDATE challans SET status='paid' WHERE challan_no=?", (mark_paid,))
+        return db.q("SELECT v.code, c.challan_no, c.offence, c.amount, c.issued_on, c.status FROM challans c JOIN vehicles v "
+                    "ON v.id=c.vehicle_id WHERE v.fleet_id=? ORDER BY c.status, c.id DESC", (fleet_id,))
+
+    async def post_load(origin: str, destination: str, freight: float, weight_t: float | None = None, vtype: str | None = None):
+        return await business.post_load(fleet_id, origin, destination, freight, weight_t, vtype)
+
+    async def find_return_loads(vehicle_code: str):
+        v = find_vehicle(vehicle_code)
+        t = db.active_trip(v["id"])
+        lat, lon = (t["dest_lat"], t["dest_lon"]) if t and t.get("dest_lat") is not None else (v["last_lat"], v["last_lon"])
+        if lat is None:
+            return {"error": "no destination or location known"}
+        loads = business.loads_near(lat, lon)
+        return [{"load_id": l["id"], "route": f"{l['origin']} → {l['destination']}", "freight": l["freight"],
+                 "posted_by": l["fleet_name"], "pickup_km": l["pickup_km"], **business.load_profit(l, v)} for l in loads[:5]] \
+            or {"none": "no Saarthi-network loads near there yet; also check BlackBuck/Vahak"}
+
+    async def take_load(load_id: int, vehicle_code: str):
+        return await business.accept_load(load_id, find_vehicle(vehicle_code))
+
     s = {"type": "string"}
     n = {"type": "number"}
     return [
+        Tool("receivables", "Money customers/brokers still owe: total, by party, overdue invoices.", params({}), receivables),
+        Tool("payment_received", "Owner says a party paid ('Sharma Logistics se 20,000 aa gaye').",
+             params({"party": s, "amount": n}, ["party", "amount"]), payment_received),
+        Tool("invoice", "Text of an invoice to share with the customer.", params({"invoice_id": {"type": "integer"}}, ["invoice_id"]), invoice),
+        Tool("detention_report", "Waiting time at loading/unloading sites and detention claims (GPS proof).",
+             params({"days": {"type": "integer"}}), detention_report),
+        Tool("set_terms", "Set free waiting hours, detention ₹ per day, and customer payment terms (days).",
+             params({"detention_free_hours": n, "detention_per_day": n, "payment_terms_days": {"type": "integer"}}), set_terms),
+        Tool("driver_account", "A driver's salary/bata/advance ledger; record a payment, advance or bonus to him.",
+             params({"vehicle_code": s, "pay_amount": n, "kind": {"type": "string", "enum": ["paid", "advance", "bonus"]}},
+                    ["vehicle_code"]), driver_account),
+        Tool("service_record", "Record a truck's service or tyre change (resets km reminders).",
+             params({"vehicle_code": s, "kind": {"type": "string", "enum": ["service", "tyre"]}, "odometer_km": n},
+                    ["vehicle_code"]), service_record),
+        Tool("challans", "List pending e-challans; add one manually; mark one paid.",
+             params({"vehicle_code": s, "add_challan_no": s, "amount": n, "offence": s, "mark_paid": s}), challans),
+        Tool("post_load", "Share a load the fleet cannot carry with other Saarthi fleets.",
+             params({"origin": s, "destination": s, "freight": n, "weight_t": n, "vtype": s}, ["origin", "destination", "freight"]),
+             post_load),
+        Tool("find_return_loads", "Loads starting near a truck's destination, with estimated profit.",
+             params({"vehicle_code": s}, ["vehicle_code"]), find_return_loads),
+        Tool("take_load", "Take a load from the Saarthi network for a truck.",
+             params({"load_id": {"type": "integer"}, "vehicle_code": s}, ["load_id", "vehicle_code"]), take_load),
         Tool("watch_report", "What the watchdog saw: tolls crossed/unreported, long stops, overspeed, route deviation, "
              "offline trucks, diesel flags.", params({"hours": {"type": "integer"}}), watch_report),
         Tool("analyze_business", "Careful analysis for strategic or tricky questions (which truck is losing money, "
@@ -255,11 +346,12 @@ def _fleet_tools(fleet_id: int) -> list[Tool]:
         Tool("trip_profit", "Profit/loss of a truck's current (or last) trip from logged expenses and freight.",
              params({"vehicle_code": s}, ["vehicle_code"]), trip_profit),
         Tool("quote_freight", "Exact cost breakdown and recommended quote for a new load (diesel + tolls + driver + "
-             "maintenance + misc). Use offered_freight to check profit on a client's offer. vtype one of "
+             "maintenance + misc + fixed EMI/insurance/permit per day; pass fixed_per_day if the owner gives his real figure). Use offered_freight to check profit on a client's offer. vtype one of "
              f"{list(costing.PROFILES)}.",
              params({"origin": s, "destination": s, "vtype": s, "load_tonnes": n, "offered_freight": n,
                      "actual_tolls": n, "empty_return_fraction": n, "diesel_price": n, "target_margin_pct": n,
-                     "distance_km": n, "broker_commission_pct": n}, ["origin", "destination"]), quote_freight),
+                     "distance_km": n, "broker_commission_pct": n, "fixed_per_day": n}, ["origin", "destination"]),
+             quote_freight),
         Tool("documents_expiring", "Vehicle documents (insurance, permit, fitness, PUC, licence) expiring within N days.",
              params({"days": {"type": "integer"}}), documents_expiring),
         Tool("open_incidents", "Unresolved breakdowns/emergencies.", params({}), open_incidents),
@@ -319,6 +411,11 @@ async def daily_digest(fleet: dict) -> str:
     docs = db.q("SELECT v.reg_label, d.doc_type, d.expiry_date FROM documents d JOIN vehicles v ON v.id=d.vehicle_id "
                 "WHERE v.fleet_id=? AND d.expiry_date<=?", (fleet["id"], (date.today() + timedelta(days=30)).isoformat()))
     lines.append(f"Total spend today: {inr(total)} · Incidents: {inc}")
+    from .. import business
+    rec = business.receivables(fleet["id"])
+    if rec["total_receivable"]:
+        overdue = sum(i["balance"] for i in rec["invoices"] if i["overdue_days"] > 0)
+        lines.append(f"💰 Receivable {inr(rec['total_receivable'])}" + (f" (overdue {inr(overdue)})" if overdue else ""))
     from .. import watchdog
     watch = watchdog.report(fleet["id"], since)
     if watch:

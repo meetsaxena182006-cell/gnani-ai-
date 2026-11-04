@@ -24,6 +24,15 @@
 - Everything (spoken entries, automatic FASTag tolls, freight received) flows into Google Sheets every hour via n8n.
 - Also catches unexplained long stops (asks the driver if all is well), heading away from the destination, overspeeding (gentle warning), trucks gone offline (owner alerted), and diesel that doesn't add up (km driven vs litres logged).
 
+**Business side: money owners lose today**
+1. **Detention:** GPS records arrival and departure at the loading and unloading points. Waiting beyond the free hours (default 4 h) becomes a ₹/day claim (default ₹1,500/day, part days count), with timestamps as proof, and is added to the invoice automatically. The driver can also say "pahunch gaya / nikal gaye".
+2. **Payments:** "maal utar gaya" → the phone shows a POD camera button → the invoice is generated (freight + detention − advance) → due date → payment reminders drafted for the owner to forward → "kis party se kitna baaki" → the owner says "Sharma ji se 20,000 aa gaye" to record payments.
+3. **Driver ledger:** salary monthly, bata per trip day, advances (from what the driver says) and payments. The driver can ask "mera kitna baaki hai?" by voice, and the owner gets a salary-day reminder.
+4. **E-way bill:** validity (1 day per 200 km, to midnight) is compared with the ETA. Before it lapses, the owner and driver are warned so it can be extended (8 h window).
+5. **Service and tyres by km:** an odometer from GPS distance → reminders before service is due.
+6. **E-challans:** pending challans per truck, entered manually or pulled from a licensed provider API (`CHALLAN_API_URL`), with a weekly owner alert.
+7. **Return loads (load mesh):** owners post loads they can't carry. When a truck nears its destination, the CEO Agent finds loads starting nearby, with estimated profit from the cost engine, and the owner says "load #ID le lo" to take one.
+
 **Companion brain**
 - Gets fresh **situation awareness** every turn: time, speed, hours driving, nearest landmark, unreported tolls, last diesel fill.
 - A fast model handles conversation, and `think_deeply` sends hard questions ("raat tak pahunchenge?", "kahan rukein?") to a stronger reasoning model along with the truck's real data.
@@ -57,6 +66,7 @@ python -m saarthi.main
 3. **Owner:** open `/office` on the laptop (key = `API_SHARED_SECRET`). For Telegram, send `/start OWNER-MEWAR` to the bot.
 4. On mobile data, WebRTC may need a TURN server. Set `ICE_SERVERS` in `.env`.
 
+To review without trucks: `python -m saarthi.demo_story`, then `python -m saarthi.main` and open `/office`. This loads a synthetic day: tolls, detention, an overdue invoice, service due, a challan and a return load.
 To try it without voice, run `python -m saarthi.sim` for a text chat as the driver or owner. To run the tests, use `pytest` (they run offline with a scripted LLM and Pipecat's test harness).
 
 ## Accuracy evaluation (Prisma in real noise)

@@ -22,6 +22,7 @@ form{display:flex;gap:8px;margin-top:8px}form input{flex:1}
 <header><b>🏢 Saarthi Office — CEO Agent</b><select id="fleet"></select><span id="st" class="off"></span></header>
 <div class="grid">
   <div class="card"><div id="map"></div><table id="trucks"><thead><tr><th>Truck</th><th>Driver</th><th>Trip</th><th>Companion</th><th>Speed</th><th>Last seen</th><th>Watchdog</th></tr></thead><tbody></tbody></table></div>
+  <div class="card" style="grid-column:1/-1"><b>💼 Business</b> <span id="biz"></span></div>
   <div class="card"><b>Ask the CEO Agent</b><div id="chat"></div>
     <form id="f"><input id="q" placeholder="e.g. Udaipur se Ahmedabad 16 ton, client 22000 de raha hai — profit?"><button>Ask</button></form>
     <p style="margin:12px 0 4px"><b>FASTag statement</b> <small>(CSV from your FASTag bank / IHMCL portal)</small></p>
@@ -58,6 +59,18 @@ async function refresh(){
   const log = await api("/api/agent-log?limit=40");
   document.getElementById("log").innerHTML = log.map(r => `<div><small>${new Date(r.ts).toLocaleTimeString()}</small> <b>${r.from_agent}</b> → ${r.to_agent}: ${r.kind} <small>${JSON.stringify(r.payload).slice(0,120)}</small></div>`).join("");
   document.getElementById("st").textContent = "updated " + new Date().toLocaleTimeString();
+  const b = await api("/api/business?fleet=" + encodeURIComponent(f.code));
+  const r = b.receivables, inr = x => "₹" + Math.round(x||0).toLocaleString("en-IN");
+  const overdue = r.invoices.filter(i => i.overdue_days > 0).reduce((s,i) => s + i.balance, 0);
+  const svc = b.service.filter(s => s.service_due_in_km < 1000).map(s => `${s.vehicle} (${s.service_due_in_km} km)`);
+  document.getElementById("biz").innerHTML =
+    `<div style="display:flex;flex-wrap:wrap;gap:18px;margin-top:6px">
+      <div>Receivable<br><b>${inr(r.total_receivable)}</b>${overdue? `<br><small style="color:var(--bad)">overdue ${inr(overdue)}</small>`:""}</div>
+      <div>Detention claimed (30d)<br><b>${inr(b.detention_30d.amount)}</b> <small>${b.detention_30d.claims} claims</small></div>
+      <div>Owed to drivers<br><b>${inr(b.drivers.reduce((s,d)=>s+d.balance_due_to_driver,0))}</b></div>
+      <div>Pending challans<br><b>${b.pending_challans.length}</b></div>
+      <div>Service due soon<br><b>${svc.join(", ") || "none"}</b></div>
+      <div>Parties<br>${Object.entries(r.by_party).map(([p,a]) => `${p}: ${inr(a)}`).join("<br>") || "-"}</div></div>`;
 }
 document.getElementById("f").onsubmit = async e => { e.preventDefault();
   const q = document.getElementById("q"), chat = document.getElementById("chat"), text = q.value.trim(); if (!text) return;

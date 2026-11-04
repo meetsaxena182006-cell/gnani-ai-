@@ -18,10 +18,10 @@ from .web import build_app
 
 async def _fatigue_loop() -> None:
     """Every minute: companion check-ins + CEO watchdog (tolls, long stops, offline trucks)."""
-    from . import fatigue, watchdog
+    from . import business, fatigue, watchdog
     while True:
         await asyncio.sleep(60)
-        for job in (fatigue.tick, watchdog.tick):
+        for job in (fatigue.tick, watchdog.tick, business.tick):
             try:
                 await job()
             except Exception:

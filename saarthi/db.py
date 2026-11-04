@@ -52,6 +52,30 @@ CREATE TABLE IF NOT EXISTS toll_crossings (
 CREATE TABLE IF NOT EXISTS watch_events (
   id INTEGER PRIMARY KEY, vehicle_id INTEGER, kind TEXT, detail TEXT, created_at TEXT
 );
+CREATE TABLE IF NOT EXISTS site_visits (
+  id INTEGER PRIMARY KEY, vehicle_id INTEGER, trip_id INTEGER, site TEXT, arrived_at TEXT, left_at TEXT,
+  waited_h REAL, detention_amount REAL, source TEXT
+);
+CREATE TABLE IF NOT EXISTS invoices (
+  id INTEGER PRIMARY KEY, fleet_id INTEGER, trip_id INTEGER, party TEXT, freight REAL, detention REAL DEFAULT 0,
+  advance_received REAL DEFAULT 0, amount_due REAL, paid REAL DEFAULT 0, issued_at TEXT, due_at TEXT,
+  status TEXT DEFAULT 'awaiting_pod', pod_file TEXT, last_reminder_at TEXT, reminders INTEGER DEFAULT 0
+);
+CREATE TABLE IF NOT EXISTS driver_ledger (
+  id INTEGER PRIMARY KEY, vehicle_id INTEGER, kind TEXT, amount REAL, note TEXT, created_at TEXT
+);
+CREATE TABLE IF NOT EXISTS challans (
+  id INTEGER PRIMARY KEY, vehicle_id INTEGER, challan_no TEXT, offence TEXT, amount REAL, issued_on TEXT,
+  status TEXT DEFAULT 'pending', source TEXT, UNIQUE(vehicle_id, challan_no)
+);
+CREATE TABLE IF NOT EXISTS loads (
+  id INTEGER PRIMARY KEY, fleet_id INTEGER, origin TEXT, destination TEXT, o_lat REAL, o_lon REAL,
+  d_lat REAL, d_lon REAL, weight_t REAL, vtype TEXT, freight REAL, ready_on TEXT, status TEXT DEFAULT 'open',
+  taken_by_vehicle INTEGER, created_at TEXT
+);
+CREATE TABLE IF NOT EXISTS reminders_sent (
+  key TEXT PRIMARY KEY, sent_at TEXT
+);
 CREATE TABLE IF NOT EXISTS agent_log (
   id INTEGER PRIMARY KEY, ts TEXT, from_agent TEXT, to_agent TEXT, kind TEXT, payload TEXT
 );
@@ -79,8 +103,15 @@ def conn() -> sqlite3.Connection:
 
 def _migrate(c: sqlite3.Connection) -> None:
     """Add columns introduced after a DB was first created."""
-    wanted = {"vehicles": {"access_token": "TEXT", "fastag": "INTEGER DEFAULT 1"}, "mesh_requests": {"asked": "TEXT"},
-              "trips": {"gps_km": "REAL DEFAULT 0", "dest_lat": "REAL", "dest_lon": "REAL"}}
+    wanted = {"vehicles": {"access_token": "TEXT", "fastag": "INTEGER DEFAULT 1", "odometer_km": "REAL DEFAULT 0",
+                           "last_service_km": "REAL DEFAULT 0", "service_interval_km": "REAL DEFAULT 20000",
+                           "last_tyre_km": "REAL DEFAULT 0", "tyre_interval_km": "REAL DEFAULT 60000",
+                           "driver_salary_month": "REAL DEFAULT 18000", "driver_bata_day": "REAL DEFAULT 400"}, "mesh_requests": {"asked": "TEXT"},
+              "trips": {"gps_km": "REAL DEFAULT 0", "dest_lat": "REAL", "dest_lon": "REAL", "origin_lat": "REAL",
+                        "origin_lon": "REAL", "eway_bill": "TEXT", "eway_valid_until": "TEXT", "delivered_at": "TEXT",
+                        "weight_t": "REAL"},
+              "fleets": {"detention_free_h": "REAL DEFAULT 4", "detention_per_day": "REAL DEFAULT 1500",
+                         "payment_terms_days": "INTEGER DEFAULT 30"}}
     for table, cols in wanted.items():
         have = {r[1] for r in c.execute(f"PRAGMA table_info({table})")}
         for col, typ in cols.items():
