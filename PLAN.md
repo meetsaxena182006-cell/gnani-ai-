@@ -3,7 +3,7 @@
 **Gnani models:** Prisma v3.0 (speech-to-text: auto language detection, keyterms, number normalisation) and Timbre v2.5 (text-to-speech, a voice for each language).
 
 ## The idea
-- **Driver Agent = a companion living on the driver's phone.** The phone sits in a holder on the dashboard. The companion is always on and hands-free: the driver never touches the phone and simply talks. It chats like a friend, checks in every 1–2 hours ("Ram Ram boss, sab theek? tabiyat badhiya?"), keeps the driver alert, logs money, and handles breakdowns.
+- **Driver Agent = a companion living on the driver's phone.** The phone sits in a holder on the dashboard. The companion is always on and hands-free: the driver never touches the phone and simply talks. It talks like a friend, checks in every 1–2 hours ("Ram Ram boss, sab theek? tabiyat badhiya?"), keeps the driver alert, logs money, and handles breakdowns.
 - **Fleet Mesh.** When a truck is in trouble, its companion asks every Saarthi companion on the same road. Each nearby companion asks its own driver: "aage ek truck mushkil mein hai, madad kar sakte hain?" The first driver to say *haan* is matched, everyone else hears "madad mil gayi", and when the problem is solved everyone is told.
 - **CEO Agent = always live on the server.** The owner can reach it through the laptop dashboard (`/office`) or Telegram voice notes. It receives every driver event, keeps the owner updated, hands emergencies straight to the owner, and gives precise deal costing (freight − diesel − driver − tolls − maintenance = profit).
 
@@ -18,7 +18,7 @@ Phone in dashboard holder (web app; screen kept awake)          Owner laptop /of
 | Need | Implementation |
 |---|---|
 | Always listening without burning credits | Silero voice-activity detection on the server cuts out speech segments, and **only speech** goes to Prisma (REST, under 30 s per segment). |
-| Doesn't interrupt family phone calls or chats with the helper | The guard responds only when addressed ("Saarthi …"), during an open conversation (90 s), or when emergency/breakdown words are heard. |
+| Doesn't interrupt family phone calls or talk with the helper | The guard responds only when addressed ("Saarthi …"), during an open conversation (90 s), or when emergency/breakdown words are heard. |
 | Talks first, every 1–2 hours | Check-in scheduler (`FATIGUE_INTERVAL_MIN`, default 90). Two unanswered check-ins alert the owner. |
 | Many languages | Prisma `indic-auto` detects the language → the companion answers in it → Timbre switches to that language's voice. Covers Hindi, Punjabi, Gujarati, Marathi, Bengali, Tamil, Telugu, Kannada, Malayalam and English. **Marwari/Mewari is not a Prisma language:** it is recognised as Hindi with Rajasthani keyterms, and the companion replies in simple Hindi with a Rajasthani touch. |
 | Calls the nearest help | A breakdown triggers a nearby mechanic lookup → "Unko call lagaun?" → *haan* → the phone dials. Only numbers that came from a lookup (or 112/108/1033) can be dialled. The web app opens the dialer pre-filled; one tap is needed until the Android wrapper is built. |

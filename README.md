@@ -28,7 +28,7 @@
 - Gets fresh **situation awareness** every turn: time, speed, hours driving, nearest landmark, unreported tolls, last diesel fill.
 - A fast model handles conversation, and `think_deeply` sends hard questions ("raat tak pahunchenge?", "kahan rukein?") to a stronger reasoning model along with the truck's real data.
 - **Road analysis:** route options, truck-adjusted ETA, NHAI tolls on the way with expected cost, weather expected at each stretch *when the truck gets there*, and night-driving hours.
-- Chats when the driver is bored (cricket, family, dhaba food, old songs, shayari) and plays music: radio streams you configure, or a YouTube Music search. Music volume drops automatically while Saarthi speaks.
+- Talks with the driver when he is bored, by voice only, (cricket, family, dhaba food, old songs, shayari) and plays music: radio streams you configure, or a YouTube Music search. Music volume drops automatically while Saarthi speaks.
 
 **CEO Agent: always live on the server, reachable from the owner's laptop (`/office`) and Telegram voice notes**
 - Live map (street or satellite) of every truck, companion status, open issues, and a feed of agent activity.
