@@ -1,0 +1,23 @@
+{
+  "_note": "Truck no-entry windows by city. Timings change and differ by road/vehicle class: copy them from the local traffic police notification and set enabled=true. Times are IST, HH:MM.",
+  "cities": [
+    {
+      "city": "EXAMPLE (disabled)",
+      "lat": 23.0225,
+      "lon": 72.5714,
+      "radius_km": 12,
+      "no_entry": [
+        [
+          "08:00",
+          "12:00"
+        ],
+        [
+          "17:00",
+          "21:00"
+        ]
+      ],
+      "enabled": false,
+      "source": "fill in from the official notification"
+    }
+  ]
+}

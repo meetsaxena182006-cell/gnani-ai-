@@ -19,13 +19,14 @@ class VehicleProfile:
     maintenance_per_km: float  # tyres + service + repairs reserve
     km_per_day: float
     fixed_per_day: float       # EMI/finance + insurance + permits + road tax + parking, spread per working day
+    tank_l: float = 300        # diesel tank capacity (litres)
 
 
 PROFILES: dict[str, VehicleProfile] = {
-    "tempo_lcv": VehicleProfile("Tempo / LCV (~2.5 t)", 2.5, 9.0, 11.0, 1.7, 2.5, 380, 900),
-    "truck_6w": VehicleProfile("6-wheeler (~9 t)", 9.0, 5.0, 6.0, 3.6, 4.0, 350, 1800),
-    "truck_10w": VehicleProfile("10-wheeler (~16 t)", 16.0, 3.5, 4.5, 3.9, 6.0, 350, 2800),
-    "trailer": VehicleProfile("Trailer (~28 t)", 28.0, 2.8, 3.5, 5.8, 8.0, 330, 3800),
+    "tempo_lcv": VehicleProfile("Tempo / LCV (~2.5 t)", 2.5, 9.0, 11.0, 1.7, 2.5, 380, 900, tank_l=60),
+    "truck_6w": VehicleProfile("6-wheeler (~9 t)", 9.0, 5.0, 6.0, 3.6, 4.0, 350, 1800, tank_l=200),
+    "truck_10w": VehicleProfile("10-wheeler (~16 t)", 16.0, 3.5, 4.5, 3.9, 6.0, 350, 2800, tank_l=300),
+    "trailer": VehicleProfile("Trailer (~28 t)", 28.0, 2.8, 3.5, 5.8, 8.0, 330, 3800, tank_l=400),
 }
 
 
@@ -46,6 +47,7 @@ class CostInputs:
     target_margin_pct: float = 15.0
     offered_freight: float | None = None
     fixed_per_day: float | None = None    # owner's real EMI+insurance+permit per day; default from the profile
+    trip_days: int | None = None          # from the trip planner's timeline (overrides km_per_day estimate)
 
 
 def _r(x: float) -> float:
@@ -67,7 +69,7 @@ def estimate(inp: CostInputs) -> dict:
 
     empty_km = inp.distance_km * inp.empty_return_fraction
     total_km = inp.distance_km + empty_km
-    days = max(1, math.ceil(total_km / p.km_per_day))
+    days = inp.trip_days or max(1, math.ceil(total_km / p.km_per_day))
 
     diesel_l = inp.distance_km / p.kmpl_loaded + empty_km / p.kmpl_empty
     diesel = diesel_l * inp.diesel_price

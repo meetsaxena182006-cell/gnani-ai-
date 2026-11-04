@@ -156,9 +156,28 @@ async def api_fleet(req: web.Request) -> web.Response:
                        "speed": round(v["last_speed_kmph"] or 0),
                        "tolls_unreported": db.one("SELECT COUNT(*) n FROM toll_crossings WHERE vehicle_id=? AND status IN "
                                                   "('unreported','asked')", (v["id"],))["n"],
-                       "trip_km": round(t["gps_km"] or 0) if t else None})
+                       "trip_km": round(t["gps_km"] or 0) if t else None,
+                       "plan": _plan_brief(t) if t else None})
         out.append({"code": f["code"], "name": f["name"], "vehicles": vs})
     return web.json_response(out)
+
+
+def _plan_brief(t: dict) -> dict | None:
+    from . import planner
+    p = planner.latest_plan(t["id"])
+    if not p:
+        return None
+    nxt = next((s for s in p["stops"] if s["at_km"] > (t["gps_km"] or 0) - p.get("start_gps_km", 0)), None)
+    return {"depart": p["depart"], "arrive": p["arrive"], "stops": len(p["stops"]),
+            "next_stop": f"{nxt['kind'].replace('_', ' ')} @ km {nxt['at_km']}" + (f" — {nxt['place'].split(' (')[0]}" if nxt and nxt.get("place") else "") if nxt else None,
+            "profit": p.get("profit")}
+
+
+async def api_plan_fleet(req: web.Request) -> web.Response:
+    _auth(req)
+    from . import planner
+    f = db.one("SELECT * FROM fleets WHERE upper(code)=upper(?)", (req.query.get("fleet", ""),)) or db.one("SELECT * FROM fleets")
+    return web.json_response(planner.plan_fleet(f["id"]))
 
 
 async def api_ceo_chat(req: web.Request) -> web.Response:
@@ -262,6 +281,7 @@ def build_app() -> web.Application:
         web.post("/api/fastag/sms", api_fastag_sms),
         web.post("/api/pod", api_pod),
         web.get("/api/business", api_business),
+        web.get("/api/plan/fleet", api_plan_fleet),
         web.static("/static", STATIC),
     ])
     return app

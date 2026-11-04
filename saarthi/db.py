@@ -76,6 +76,9 @@ CREATE TABLE IF NOT EXISTS loads (
 CREATE TABLE IF NOT EXISTS reminders_sent (
   key TEXT PRIMARY KEY, sent_at TEXT
 );
+CREATE TABLE IF NOT EXISTS trip_plans (
+  id INTEGER PRIMARY KEY, trip_id INTEGER, plan TEXT, created_at TEXT
+);
 CREATE TABLE IF NOT EXISTS agent_log (
   id INTEGER PRIMARY KEY, ts TEXT, from_agent TEXT, to_agent TEXT, kind TEXT, payload TEXT
 );

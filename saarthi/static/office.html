@@ -21,8 +21,9 @@ form{display:flex;gap:8px;margin-top:8px}form input{flex:1}
 </style></head><body>
 <header><b>🏢 Saarthi Office — CEO Agent</b><select id="fleet"></select><span id="st" class="off"></span></header>
 <div class="grid">
-  <div class="card"><div id="map"></div><table id="trucks"><thead><tr><th>Truck</th><th>Driver</th><th>Trip</th><th>Companion</th><th>Speed</th><th>Last seen</th><th>Watchdog</th></tr></thead><tbody></tbody></table></div>
+  <div class="card"><div id="map"></div><table id="trucks"><thead><tr><th>Truck</th><th>Driver</th><th>Trip</th><th>Plan (ETA · next stop)</th><th>Companion</th><th>Speed</th><th>Last seen</th><th>Watchdog</th></tr></thead><tbody></tbody></table></div>
   <div class="card" style="grid-column:1/-1"><b>💼 Business</b> <span id="biz"></span></div>
+  <div class="card" style="grid-column:1/-1"><b>🧭 Fleet load plan</b> <small>(best truck for each open load — profit after empty km)</small><div id="fplan"></div></div>
   <div class="card"><b>Ask the CEO Agent</b><div id="chat"></div>
     <form id="f"><input id="q" placeholder="e.g. Udaipur se Ahmedabad 16 ton, client 22000 de raha hai — profit?"><button>Ask</button></form>
     <p style="margin:12px 0 4px"><b>FASTag statement</b> <small>(CSV from your FASTag bank / IHMCL portal)</small></p>
@@ -49,6 +50,7 @@ async function refresh(){
   const pts = [];
   f.vehicles.forEach(v => {
     tb.insertAdjacentHTML("beforeend", `<tr><td>${v.reg}</td><td>${v.driver||"-"}</td><td>${v.trip||"-"}</td>
+      <td>${v.plan? `→ ${v.plan.arrive}<br><small>${v.plan.next_stop||""}</small>` : "-"}</td>
       <td class="${v.companion==="live"?"live":"off"}">${v.companion}</td><td>${v.speed} km/h</td>
       <td>${v.last_seen? new Date(v.last_seen).toLocaleTimeString():"-"}</td>
       <td>${v.issue? "⚠️ "+v.issue+" " : ""}${v.tolls_unreported? "🧾 "+v.tolls_unreported+" toll(s) unreported" : (v.issue? "" : "✅")}</td></tr>`);
@@ -71,6 +73,13 @@ async function refresh(){
       <div>Pending challans<br><b>${b.pending_challans.length}</b></div>
       <div>Service due soon<br><b>${svc.join(", ") || "none"}</b></div>
       <div>Parties<br>${Object.entries(r.by_party).map(([p,a]) => `${p}: ${inr(a)}`).join("<br>") || "-"}</div></div>`;
+  const fp = await api("/api/plan/fleet?fleet=" + encodeURIComponent(f.code));
+  document.getElementById("fplan").innerHTML = (fp.assignments||[]).length ?
+    `<table><tr><th>Truck</th><th>Load</th><th>Freight</th><th>Empty km</th><th>Km used loaded</th><th>Capacity</th><th>Profit</th><th>Pickup ETA</th></tr>` +
+    fp.assignments.map(a => `<tr><td>${a.vehicle}</td><td>#${a.load_id} ${a.load}${(a.add_on_loads||[]).map(x=>`<br><small>+ #${x.load_id} ${x.load} (${x.weight_t} t)</small>`).join("")}</td>
+      <td>${inr(a.freight)}</td><td>${a.deadhead_km}</td><td>${a.km_utilisation_pct}%</td><td>${a.capacity_pct ?? "-"}%</td><td><b>${inr(a.profit)}</b></td><td>${a.pickup_eta}</td></tr>`).join("") +
+    `</table><small>Total ${inr(fp.total_profit)} · fleet km utilisation ${fp.fleet_km_utilisation_pct}% · idle: ${fp.idle_trucks.join(", ")||"none"}</small>`
+    : `<small>${fp.note || "no profitable assignment right now"}</small>`;
 }
 document.getElementById("f").onsubmit = async e => { e.preventDefault();
   const q = document.getElementById("q"), chat = document.getElementById("chat"), text = q.value.trim(); if (!text) return;

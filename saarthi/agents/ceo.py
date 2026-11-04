@@ -309,9 +309,40 @@ def _fleet_tools(fleet_id: int) -> list[Tool]:
     async def take_load(load_id: int, vehicle_code: str):
         return await business.accept_load(load_id, find_vehicle(vehicle_code))
 
+    from .. import planner
+
+    async def plan_trip(origin: str, destination: str, vehicle_code: str | None = None, vtype: str | None = None,
+                        load_tonnes: float | None = None, freight: float | None = None, depart_after: str | None = None,
+                        latest_arrival: str | None = None, relief_driver: bool = False):
+        if vehicle_code:
+            v = find_vehicle(vehicle_code)
+            t = db.active_trip(v["id"])
+            if t and destination.lower() in (t["destination"] or "").lower():
+                plan = await planner.plan_for_vehicle(v, depart_after, latest_arrival, relief_driver)
+                return {"summary": planner.owner_summary(plan, f"{v['reg_label']}"), **{k: plan[k] for k in ("depart", "arrive", "total_h", "profit")}} if "error" not in plan else plan
+            vtype = vtype or v["vtype"]
+        plan = await planner.plan_request(fleet_id, origin, destination, vtype or default_vtype_all(), load_tonnes,
+                                          freight, depart_after, latest_arrival, relief_driver)
+        return {k: plan.get(k) for k in ("summary", "depart", "arrive", "total_h", "driving_h", "profit", "margin_pct", "error")}
+
+    def default_vtype_all():
+        vs = vehicles()
+        return vs[0]["vtype"] if vs else "truck_10w"
+
+    async def plan_fleet():
+        return planner.plan_fleet(fleet_id)
+
     s = {"type": "string"}
     n = {"type": "number"}
     return [
+        Tool("plan_trip", "Plan a trip precisely: best route and departure time in the next 24 h, legal + health breaks at "
+             "named dhabas/pumps, fuel stops, weather at each stretch, tolls, night driving, ETA, cost and profit. "
+             "depart_after / latest_arrival as ISO date-time (IST) or 'now'. relief_driver if two drivers.",
+             params({"origin": s, "destination": s, "vehicle_code": s, "vtype": s, "load_tonnes": n, "freight": n,
+                     "depart_after": s, "latest_arrival": s, "relief_driver": {"type": "boolean"}}, ["origin", "destination"]),
+             plan_trip),
+        Tool("plan_fleet", "Plan the whole fleet: which truck should take which open load (own orders + Saarthi network) "
+             "for maximum total profit, empty km, capacity use, part-load consolidation, idle trucks.", params({}), plan_fleet),
         Tool("receivables", "Money customers/brokers still owe: total, by party, overdue invoices.", params({}), receivables),
         Tool("payment_received", "Owner says a party paid ('Sharma Logistics se 20,000 aa gaye').",
              params({"party": s, "amount": n}, ["party", "amount"]), payment_received),

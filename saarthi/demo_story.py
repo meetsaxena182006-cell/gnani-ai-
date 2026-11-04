@@ -68,6 +68,27 @@ async def story() -> None:
           "VALUES(?, 'Ahmedabad', 'Udaipur', 23.0225, 72.5714, 24.585, 73.712, 14, 'truck_10w', 16500, 'open', ?)",
           (shree["id"], db.now()))
     await business.return_load_check()
+
+    # Trip plan for MW-T1 (offline: synthetic NH48 geometry, clear weather, demo dhaba names)
+    from . import planner
+    nh48 = [(23.80, 73.45), (23.62, 73.255), (23.41, 72.83), (23.0225, 72.5714)]
+
+    async def route(*a):
+        return {"source": "demo", "traffic": "not available", "routes": [{"distance_km": 140.0, "duration_h": 2.4,
+                                                                         "truck_duration_h": 3.4, "_coords": nh48}]}
+
+    async def hourly(*a, **k):
+        return {}
+
+    async def places(points, **k):
+        return [[{"name": "Demo Highway Dhaba", "distance_km": 0.4}] for _ in points]
+    geo.route, geo.forecast_hourly, geo.overpass_along = route, hourly, places
+    await planner.plan_for_vehicle(db.vehicle_by_code("MW-T1"))
+    db.ex("INSERT INTO loads(fleet_id,origin,destination,o_lat,o_lon,d_lat,d_lon,weight_t,vtype,freight,status,created_at) "
+          "VALUES(?, 'Ahmedabad', 'Udaipur', 23.03, 72.58, 24.585, 73.712, 4, 'truck_10w', 6500, 'open', ?)", (shree["id"], db.now()))
+    db.ex("INSERT INTO loads(fleet_id,origin,destination,o_lat,o_lon,d_lat,d_lon,weight_t,vtype,freight,status,created_at) "
+          "VALUES(?, 'Udaipur', 'Jaipur', 24.585, 73.712, 26.912, 75.787, 8, 'truck_6w', 24000, 'open', ?)",
+          (v1["fleet_id"], db.now()))
     print("Demo story ready. Run: python -m saarthi.main  ->  /office")
 
 

@@ -152,6 +152,17 @@ def make_tools(vid: int, turn: Turn) -> list[Tool]:
                 db.ex("UPDATE trips SET dest_lat=?, dest_lon=? WHERE id=?", (d["lat"], d["lon"], t["id"]))
         except Exception:
             pass
+        import asyncio
+        import os
+
+        async def _auto_plan():
+            from .. import planner
+            try:
+                await planner.plan_for_vehicle(db.vehicle(vid))
+            except Exception:
+                log.exception("auto trip plan failed")
+        if os.getenv("PLAN_ON_TRIP_START", "1") == "1":
+            asyncio.create_task(_auto_plan())  # plan arrives a few seconds later (owner + driver)
         await ceo.on_event(vid, "trip_started", {"origin": origin, "destination": destination, "freight": freight_amount})
         return {"trip_id": t["id"], "origin": origin, "destination": destination}
 
@@ -264,6 +275,16 @@ def make_tools(vid: int, turn: Turn) -> list[Tool]:
         """Full road analysis: route options, truck ETA, tolls on the way (NHAI data), weather expected
         at each stretch WHEN the truck gets there, and night-driving hours."""
         return await analyze_route(v(), db.active_trip(vid))
+
+    async def plan_my_trip(depart_in_hours: float = 0, relief_driver: bool = False):
+        """Best departure, breaks, fuel stops, weather, ETA for this trip (owner gets the full plan)."""
+        from .. import planner
+        from .common import ist_now
+        after = (ist_now() + timedelta(hours=depart_in_hours)).isoformat() if depart_in_hours else None
+        plan = await planner.plan_for_vehicle(v(), after, None, relief_driver, notify=True)
+        if "error" in plan:
+            return plan
+        return {"say": planner.speakable_plan(plan), "depart": plan["depart"], "arrive": plan["arrive"], "why": plan["why"]}
 
     async def delivered(receiver: str | None = None):
         from .. import business
@@ -381,6 +402,9 @@ def make_tools(vid: int, turn: Turn) -> list[Tool]:
              "with expected cost, weather expected at each stretch at arrival time, night driving, traffic if available.",
              params({}), route_ahead),
         Tool("my_documents", "This truck's document expiry dates.", params({}), my_documents),
+        Tool("plan_my_trip", "Make the trip plan: best time to leave, stops for chai/khana/sleep/diesel, weather, ETA. "
+             "Use when the driver asks 'kab niklein', 'kahan rukein', 'kitne baje pahunchenge', or at the start of a trip.",
+             params({"depart_in_hours": n, "relief_driver": {"type": "boolean"}}), plan_my_trip),
         Tool("delivered", "Driver says the goods are delivered/unloaded ('maal utar gaya', 'delivery ho gayi'). Starts "
              "the invoice; asks for a POD photo.", params({"receiver": s}), delivered),
         Tool("at_site", "Driver reached or left the loading/unloading point (for waiting-time / detention proof).",

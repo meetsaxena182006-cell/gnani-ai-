@@ -195,6 +195,34 @@ async def weather(lat: float, lon: float) -> dict:
     return assess_weather(js)
 
 
+async def forecast_hourly(lat: float, lon: float, days: int = 3) -> dict:
+    """Raw hourly forecast (IST) for a point: used by the trip planner to test many departure times offline."""
+    params = {"latitude": lat, "longitude": lon, "timezone": "Asia/Kolkata", "forecast_days": days,
+              "hourly": "precipitation_probability,precipitation,visibility,weather_code,temperature_2m,wind_speed_10m"}
+    async with httpx.AsyncClient(headers=UA, timeout=TIMEOUT) as c:
+        r = await c.get("https://api.open-meteo.com/v1/forecast", params=params)
+        r.raise_for_status()
+        return r.json()
+
+
+async def overpass_along(points: list[tuple[float, float]], kinds: tuple[str, ...] = ("fuel", "dhaba"),
+                         radius_m: int = 3000) -> list[list[dict]]:
+    """Fuel pumps / dhabas near each planned stop point, in ONE Overpass request."""
+    if not points:
+        return []
+    tags = [t for k in kinds for t in HELP_TAGS[k]]
+    body = "".join(f"{t}(around:{radius_m},{lat},{lon});" for lat, lon in points for t in tags)
+    async with httpx.AsyncClient(headers=UA, timeout=httpx.Timeout(40.0)) as c:
+        r = await c.post("https://overpass-api.de/api/interpreter", data={"data": f"[out:json][timeout:35];({body});out center 200;"})
+        r.raise_for_status()
+        elements = r.json().get("elements", [])
+    out = []
+    for lat, lon in points:
+        ranked = rank_places(elements, lat, lon, limit=50)
+        out.append([p for p in ranked if p["distance_km"] <= radius_m / 1000][:3])
+    return out
+
+
 async def forecast_at(lat: float, lon: float, hours_ahead: float) -> dict:
     """Weather expected at a point when the truck reaches it (hourly forecast, up to 48 h)."""
     params = {"latitude": lat, "longitude": lon, "timezone": "Asia/Kolkata", "forecast_days": 2,

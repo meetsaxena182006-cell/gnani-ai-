@@ -24,6 +24,18 @@
 - Everything (spoken entries, automatic FASTag tolls, freight received) flows into Google Sheets every hour via n8n.
 - Also catches unexplained long stops (asks the driver if all is well), heading away from the destination, overspeeding (gentle warning), trucks gone offline (owner alerted), and diesel that doesn't add up (km driven vs litres logged).
 
+**Load & route planning (precise, optimised)**
+- **Trip planner:** for every route option × every departure time in the next 24 h, it simulates the drive in 5 km steps:
+  - truck speed, slowed by the **forecast weather at that stretch at that hour** (fog, heavy rain, wind);
+  - **live traffic** (with a Google key) for leaving now;
+  - **driver rules** from the Motor Transport Workers Act 1961 (via MV Act s.91): a 30-min rest within 5 h, 8 h driving a day, 10 h spread-over, 8 h sleep; 16 h driving if there is a relief driver;
+  - a **health break** every 2 h, with **night driving** penalised;
+  - **fuel stops** before the tank reaches 15%;
+  - **city no-entry windows** (`data/truck_restrictions.json`).
+  Each plan is scored in ₹: freight − diesel − **NHAI tolls on that route** − maintenance − driver/fixed cost per hour − risk. You get the best departure, a stop schedule with **named dhabas and pumps** (OpenStreetMap), ETA, profit, and *why* (e.g. "leave at 05:30: 4.5 h less night driving, 2 h less fog").
+- **Fleet load planner:** every truck (where and when it becomes free) × every open load (own orders + Saarthi network). It counts empty km, checks capacity, and finds the **optimal assignment (Hungarian algorithm)** for maximum total profit, then **consolidates part-loads** into spare capacity. Reports km utilisation and idle trucks.
+- **Updated to the CEO all the time:** the plan goes to the owner (full) and the driver (spoken summary) at trip start. The companion announces each planned stop as the truck approaches it ("10 km aage Demo Dhaba pe chai break plan hai"). If the truck falls 1 h+ behind, the owner gets a new ETA. **The driver is never pushed to speed up to recover time.**
+
 **Business side: money owners lose today**
 1. **Detention:** GPS records arrival and departure at the loading and unloading points. Waiting beyond the free hours (default 4 h) becomes a ₹/day claim (default ₹1,500/day, part days count), with timestamps as proof, and is added to the invoice automatically. The driver can also say "pahunch gaya / nikal gaye".
 2. **Payments:** "maal utar gaya" → the phone shows a POD camera button → the invoice is generated (freight + detention − advance) → due date → payment reminders drafted for the owner to forward → "kis party se kitna baaki" → the owner says "Sharma ji se 20,000 aa gaye" to record payments.
