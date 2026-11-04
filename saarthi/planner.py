@@ -226,18 +226,23 @@ def simulate(req: TripRequest, route_idx: int, coords, distance_km: float, base_
     return sim
 
 
-def score(req: TripRequest, sim: Sim, distance_km: float, toll_total: float | None) -> dict:
+def score(req: TripRequest, sim: Sim, distance_km: float, toll_total: float | None,
+          t0: datetime | None = None) -> dict:
+    """t0 = when the truck is available. Hours spent waiting before departure cost the same as driving hours
+    (driver + EMI/insurance keep running), so a later departure must earn its delay through less risk."""
     total_h = (sim.arrive - sim.depart).total_seconds() / 3600
+    wait_h = max(0.0, (sim.depart - t0).total_seconds() / 3600) if t0 else 0.0
     days = max(1, math.ceil(total_h / 24))
     est = costing.estimate(costing.CostInputs(
         distance_km=distance_km, vtype=req.vtype, diesel_price=req.diesel_price, load_tonnes=req.load_tonnes,
         actual_tolls=toll_total if toll_total else None, offered_freight=req.freight, fixed_per_day=req.fixed_per_day,
-        trip_days=days, helper_per_day=0))
+        trip_days=days, helper_per_day=1200 if req.relief_driver else 0))  # second driver's salary + bata
     lines = est["cost_lines"]
     per_day_time = (est["assumptions"]["driver_salary_per_day"] + est["assumptions"]["driver_bata_per_day"]
-                    + est["assumptions"]["misc_per_day"] + est["assumptions"]["fixed_per_day"]) * (2 if req.relief_driver else 1)
+                    + est["assumptions"]["misc_per_day"] + est["assumptions"]["fixed_per_day"]
+                    + est["assumptions"]["helper_per_day"])
     variable = lines["diesel"] + lines["tolls"] + lines["maintenance_tyres"]
-    time_cost = per_day_time * total_h / 24
+    time_cost = per_day_time * (total_h + wait_h) / 24
     risk = (PENALTY["night_h"] * sim.night_h + PENALTY["fog_h"] * sim.hazard_h.get("fog", 0)
             + PENALTY["heavy_rain_h"] * sim.hazard_h.get("heavy_rain", 0))
     late_h = 0.0
@@ -246,7 +251,7 @@ def score(req: TripRequest, sim: Sim, distance_km: float, toll_total: float | No
         risk += PENALTY["late_fixed"] + PENALTY["late_h"] * late_h
     freight = req.freight or 0
     value = freight - variable - time_cost - risk
-    return {"score": value, "total_h": total_h, "variable_cost": variable, "time_cost": time_cost, "risk_penalty": risk,
+    return {"score": value, "total_h": total_h, "wait_h": wait_h, "variable_cost": variable, "time_cost": time_cost, "risk_penalty": risk,
             "late_h": late_h, "estimate": est, "days": days}
 
 
@@ -284,7 +289,7 @@ async def plan_trip(req: TripRequest, with_places: bool = True) -> dict:
             dep = start + timedelta(hours=h)
             live_traffic = opt["traffic_delay_h"] if h == 0 else 0.0  # live traffic only valid for leaving now
             sim = simulate(req, opt["i"], opt["coords"], opt["km"], opt["base_h"], dep, weather, rules, live_traffic)
-            sc = score(req, sim, opt["km"], opt["tolls"]["expected_total"])
+            sc = score(req, sim, opt["km"], opt["tolls"]["expected_total"], t0=start)
             results.append((sc["score"], opt, sim, sc))
     best = max(results, key=lambda x: x[0])
     fastest = min(results, key=lambda x: (x[3]["total_h"], -x[0]))
@@ -345,8 +350,10 @@ def _reasons(best, now, fastest) -> list[str]:
                    + f" (score {inr(best[0])} vs {inr(now[0])}).")
     if bo["i"] != 0:
         out.append(f"Route option {bo['i'] + 1} chosen ({bo['km']} km, tolls ≈ {inr(bo['tolls']['expected_total'])}).")
-    if fastest[2].depart != bs.depart or fastest[1]["i"] != bo["i"]:
+    if bsc["total_h"] - fastest[3]["total_h"] >= 0.3:
         out.append(f"Fastest plan would take {fastest[3]['total_h']:.1f} h vs {bsc['total_h']:.1f} h, but with more risk/cost.")
+    if bs.depart != ns.depart:
+        out.append(f"Waiting {bsc['wait_h']:.1f} h before leaving is counted as cost (driver + EMI) and still comes out ahead.")
     return out or ["Leaving now on the main route is already the best plan."]
 
 

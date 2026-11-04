@@ -211,3 +211,19 @@ async def test_ceo_fleet_plan_tool(fresh):
     assert "plan_trip" in tools and "plan_fleet" in tools
     res = await tools["plan_fleet"].fn()
     assert "assignments" in res
+
+
+async def test_no_pointless_waiting_when_weather_is_clear(monkeypatch):
+    """Idle hours cost money: with clear weather the plan should not delay departure by many hours."""
+    async def route(*a):
+        return {"source": "t", "traffic": "n/a", "routes": [{"distance_km": 300.0, "duration_h": 5, "truck_duration_h": 7, "_coords": LONG[:31]}]}
+    async def hourly(lat, lon, days=3):
+        return fog_js(datetime.now(timezone.utc), fog_hours=())
+    async def places(points, **k):
+        return [[] for _ in points]
+    monkeypatch.setattr(geo, "route", route); monkeypatch.setattr(geo, "forecast_hourly", hourly)
+    monkeypatch.setattr(geo, "overpass_along", places)
+    now = datetime.now(timezone.utc)
+    plan = await planner.plan_trip(TripRequest(origin=LONG[0], destination=LONG[30], freight=30000, depart_after=now))
+    wait_h = (datetime.fromisoformat(plan["depart_iso"]) - now).total_seconds() / 3600
+    assert wait_h <= 6
