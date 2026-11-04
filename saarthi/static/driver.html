@@ -43,6 +43,7 @@ document.addEventListener("visibilitychange", () => { if (document.visibilitySta
 function send(obj){ if (dc && dc.readyState === "open") dc.send(JSON.stringify(obj)); }
 
 function startGps(){
+  if (window.SaarthiAndroid) return;            // the app sends native GPS (works with the screen off)
   if (!navigator.geolocation || geoWatch) return;
   geoWatch = navigator.geolocation.watchPosition(
     p => send({type:"location", lat:p.coords.latitude, lon:p.coords.longitude, speed:p.coords.speed, acc:p.coords.accuracy}),
@@ -71,6 +72,12 @@ function onMessage(m){
         const r = await fetch(`/api/pod?v=${encodeURIComponent(V)}&k=${encodeURIComponent(K)}`, {method:"POST", body:fd});
         lbl.textContent = r.ok ? "✅ POD bhej diya" : "❌ dobara try kariye"; };
       lbl.appendChild(inp); acts.appendChild(lbl);
+    } else if (a.type === "answer_call" && window.SaarthiAndroid) {
+      window.SaarthiAndroid.answerCall();
+    } else if (a.type === "end_call" && window.SaarthiAndroid) {
+      window.SaarthiAndroid.endCall();
+    } else if (a.type === "open_url" && window.SaarthiAndroid) {
+      window.SaarthiAndroid.openUrl(a.url);      // app: opens YouTube Music directly, no tap
     } else if (a.type === "open_url") {
       // Songs open in YouTube Music (needs one tap; the companion keeps running in the background)
       const b = document.createElement("a"); b.href = a.url; b.target = "_blank"; b.rel = "noopener";
@@ -130,5 +137,8 @@ function reconnect(){
 $("out").onplaying = () => $("orb").classList.add("talking");
 $("out").onpause = () => $("orb").classList.remove("talking");
 $("start").onclick = async () => { $("start").style.display = "none"; await keepAwake(); connect(); };
+// Inside the Saarthi Android app: start by itself, no tap; native events (calls, messages) go to the companion.
+window.saarthiNative = ev => send(ev);
+if (window.SaarthiAndroid && V && K) { $("start").style.display = "none"; status("सारथी ऐप — फ़ोन छूने की ज़रूरत नहीं"); connect(); }
 if (!V || !K) { status("लिंक अधूरा है (v और k चाहिए)"); $("start").disabled = true; }
 </script></body></html>

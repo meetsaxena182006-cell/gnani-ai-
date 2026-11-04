@@ -206,14 +206,16 @@ async def api_fastag_statement(req: web.Request) -> web.Response:
 
 
 async def api_fastag_sms(req: web.Request) -> web.Response:
-    """FASTag debit SMS forwarded from the owner's phone (SMS-forwarder app -> this webhook)."""
-    _auth(req)
+    """FASTag debit SMS: from the driver app (truck key) or forwarded from the owner's phone (office key)."""
+    truck = db.vehicle_by_token(req.query.get("v", ""), req.query.get("k", "")) if req.query.get("k") else None
+    if not truck:
+        _auth(req)
     from . import fastag
     body = await req.json()
     d = fastag.parse_sms(body.get("text", ""))
     if not d:
         return web.json_response({"status": "not_a_fastag_debit"})
-    default = fastag.find_vehicle(body.get("vehicle", "")) if body.get("vehicle") else None
+    default = truck or (fastag.find_vehicle(body.get("vehicle", "")) if body.get("vehicle") else None)
     return web.json_response(await fastag.reconcile(d, default_vehicle=default))
 
 
@@ -249,6 +251,21 @@ async def api_pod(req: web.Request) -> web.Response:
     return web.json_response({"ok": True, "invoice": inv["id"] if inv else None})
 
 
+async def api_location(req: web.Request) -> web.Response:
+    """Native GPS from the driver app (works with the screen off)."""
+    v = db.vehicle_by_token(req.query.get("v", ""), req.query.get("k", ""))
+    if not v:
+        raise web.HTTPUnauthorized()
+    b = await req.json()
+    lat, lon = float(b["lat"]), float(b["lon"])
+    if not (-90 <= lat <= 90 and -180 <= lon <= 180):
+        return web.json_response({"error": "bad coordinates"}, status=400)
+    from . import fatigue
+    speed = b.get("speed")
+    await fatigue.location_update(v["id"], lat, lon, float(speed) * 3.6 if isinstance(speed, (int, float)) else None)
+    return web.json_response({"ok": True})
+
+
 async def api_business(req: web.Request) -> web.Response:
     _auth(req)
     from . import business
@@ -280,6 +297,7 @@ def build_app() -> web.Application:
         web.post("/api/fastag/statement", api_fastag_statement),
         web.post("/api/fastag/sms", api_fastag_sms),
         web.post("/api/pod", api_pod),
+        web.post("/api/location", api_location),
         web.get("/api/business", api_business),
         web.get("/api/plan/fleet", api_plan_fleet),
         web.static("/static", STATIC),

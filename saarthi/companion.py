@@ -231,6 +231,10 @@ class CompanionGuard(_guard_base()):
     async def _client_message(self, msg) -> None:
         if not isinstance(msg, dict):
             return
+        kind = msg.get("type")
+        if kind in ("incoming_call", "call_ended", "call_active", "notification"):
+            await drv.native_event(db.vehicle(self.s.vid), msg)
+            return
         if msg.get("type") == "location" and msg.get("lat") is not None:
             speed = msg.get("speed")  # m/s from the phone's GPS, may be null
             await fatigue.location_update(self.s.vid, float(msg["lat"]), float(msg["lon"]),

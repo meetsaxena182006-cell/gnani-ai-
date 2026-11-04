@@ -8,6 +8,7 @@ from __future__ import annotations
 import argparse
 import os
 import secrets
+from urllib.parse import quote
 from datetime import date, timedelta
 
 from . import db
@@ -43,8 +44,9 @@ def seed(demo: bool = False) -> None:
         vs = db.q("SELECT code, reg_label, access_token FROM vehicles WHERE fleet_id=?", (f["id"],))
         print(f"  {f['name']}: owner joins with  /start OWNER-{f['code']}")
         for v in vs:
-            print(f"     {v['reg_label']}: companion app  {settings.public_base_url}/driver?v={v['code']}&k={v['access_token']}"
-                  f"   (Telegram fallback: /start {v['code']})")
+            link = f"{settings.public_base_url}/driver?v={v['code']}&k={v['access_token']}"
+            print(f"     {v['reg_label']}: companion link  {link}")
+            print(f"        Android app setup:  saarthi://setup?url={quote(link, safe='')}   (Telegram fallback: /start {v['code']})")
 
 
 def _demo_state() -> None:

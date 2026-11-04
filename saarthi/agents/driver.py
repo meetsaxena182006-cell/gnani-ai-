@@ -104,10 +104,37 @@ async def intercept(v: dict, text: str) -> str | None:
             return "Theek hai, call nahi kar raha. Kuch aur chahiye to boliye."
         if q["kind"] == "mesh":
             return await mesh.respond(v, q["request_id"], yn)
+        if q["kind"] == "answer_call":
+            if yn:
+                await bus.send(to_driver(v, "📞 Call uthaya", actions=[{"type": "answer_call"}]))
+                return "Utha raha hoon, speaker pe hai. Baat kariye."
+            await bus.send(to_driver(v, "📵 Call kata", actions=[{"type": "end_call"}]))
+            return "Theek hai, kaat diya. Gaadi rukne pe call back kar lena."
     from ..fatigue import ack_if_pending
     if yn is True and ack_if_pending(vid):
         return "Bahut badhiya, boss. Dhyan se chalaiye, paani peete rahiye."
     return None
+
+
+async def native_event(v: dict, msg: dict) -> None:
+    """Events from the driver app: incoming call, call ended, message notification."""
+    kind = msg.get("type")
+    if kind == "incoming_call":
+        who = msg.get("name") or "Anjaan number"
+        ask(v["id"], "answer_call")
+        db.log_agent(f"driver:{v['code']}", "phone", "incoming_call", {"known": bool(msg.get("name"))})
+        await bus.send(to_driver(v, f"📞 {who}", speak=f"Boss, {who} ka call aa raha hai. Uthaun?"))
+    elif kind in ("call_ended", "call_active"):
+        q = questions.get(v["id"])
+        if q and q["kind"] == "answer_call":
+            questions.pop(v["id"], None)
+    elif kind == "notification":
+        title, text, app = (msg.get("title") or "")[:40], (msg.get("text") or "")[:200], msg.get("app") or "message"
+        if not title or not text:
+            return
+        moving = is_moving(v)
+        body = text if not moving or len(text) <= 80 else text[:80] + "… baaki gaadi rukne pe"
+        await bus.send(to_driver(v, f"💬 {app}: {title}", speak=f"Boss, {title} ka {app} message: {body}"))
 
 
 # ---------------- tools ----------------

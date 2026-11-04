@@ -64,6 +64,17 @@ Phone in dashboard holder ⇄ WebRTC ⇄ [VAD → Prisma v3.0 → Guard → LLM+
           GPS over data channel ─┘                     └─ Fleet Mesh ⇄ companions of nearby trucks
 ```
 
+## Driver app (Android)
+`android/` is a native app that keeps the companion alive with the **screen off**. It provides:
+- native GPS;
+- voice call handling ("Sharma ji ka call aa raha hai, uthaun?" → *haan* answers on speaker);
+- dialing help after the driver says *haan*;
+- WhatsApp/SMS messages read aloud;
+- FASTag debit SMS sent automatically for toll reconciliation;
+- songs opening straight in YouTube Music.
+
+GitHub Actions builds the APK on every push. See `android/README.md`.
+
 ## Run it
 
 ```bash
