@@ -22,6 +22,8 @@
 - **FASTag trucks:** tolls are logged automatically when the GPS shows a plaza crossing, so the driver is never asked. The estimate is replaced with the **actual deduction** when the FASTag statement (CSV upload) or debit SMS (forwarded to `/api/fastag/sms`) arrives. A deduction with **no GPS crossing** is flagged to the owner as a possible wrong or double charge to dispute.
 - **Fuel pumps:** when the truck stops at a fuel station (OpenStreetMap) and drives off without logging diesel, the companion asks "Demo Fuels pump pe 12 minute ruke the, diesel bharwaya? kitne litre, kitne ka?".
 - Everything (spoken entries, automatic FASTag tolls, freight received) flows into Google Sheets every hour via n8n.
+- **CEO Sentinel (`sentinel.py`): proof that nothing is missing.** Every minute each truck gets a checklist: location live, Driver Agent reachable, open incidents, driving hours, check-ins answered, every crossed toll accounted for, diesel logged within one tank's range (odometer-based), unconfirmed entries, freight set, e-way bill validity, documents. The office shows one headline ("✅ Sab theek" or what exactly needs attention) and the owner can ask "sab theek hai? kuch miss to nahi?".
+- **The loop is closed:** a toll question the driver didn't answer is asked again after 30 min ("ek baat reh gayi — kitna laga tha?"); still nothing after the second reminder → the owner is told with the plazas and expected amount. 4.5 h+ continuous driving → the companion suggests chai and rest (never to speed up). An expired e-way bill or document on an active trip → owner, once a day.
 - Also catches unexplained long stops (asks the driver if all is well), heading away from the destination, overspeeding (gentle warning), trucks gone offline (owner alerted), and diesel that doesn't add up (km driven vs litres logged).
 
 **Load & route planning (precise, optimised)**
@@ -49,6 +51,8 @@
 - Gets fresh **situation awareness** every turn: time, speed, hours driving, nearest landmark, unreported tolls, last diesel fill.
 - A fast model handles conversation, and `think_deeply` sends hard questions ("raat tak pahunchenge?", "kahan rukein?") to a stronger reasoning model along with the truck's real data.
 - **Road analysis:** route options, truck-adjusted ETA, NHAI tolls on the way with expected cost, weather expected at each stretch *when the truck gets there*, and night-driving hours.
+- **Remembers him:** personal things the driver shares (children's names, village, favourite singer, an upcoming wedding) are saved as short facts (`remember` tool, last 30 kept) and brought up naturally on later days, like a friend would.
+- Reasons in four silent steps before answering: understand his need and mood → check facts with tools → connect them (fog ahead + hours driven → stop at the next dhaba) → one clear suggestion with the reason.
 - Talks with the driver when he is bored, by voice only, (cricket, family, dhaba food, old songs, shayari) and plays music: radio streams you configure, or a YouTube Music search. Music volume drops automatically while Saarthi speaks.
 
 **CEO Agent: always live on the server, reachable from the owner's laptop (`/office`) and Telegram voice notes**
@@ -112,6 +116,6 @@ Results will be filled in after the pilot.
 - All fleets, plates and people in this repo and in the demo are **synthetic**.
 
 ## Project layout
-`saarthi/companion.py` live voice pipeline (Pipecat + pipecat-gnani) · `static/driver.html` phone app · `static/office.html` owner dashboard · `agents/driver.py` Driver Agent · `agents/ceo.py` CEO Agent · `agents/mesh.py` Fleet Mesh · `costing.py` cost engine · `speech.py` Gnani Prisma/Timbre · `safety.py` escalation rules · `fatigue.py` check-ins + live location · `web.py` tracking page + n8n API · `telegram_app.py` bots.
+`saarthi/companion.py` live voice pipeline (Pipecat + pipecat-gnani) · `static/driver.html` phone app · `static/office.html` owner dashboard · `agents/driver.py` Driver Agent · `agents/ceo.py` CEO Agent · `agents/mesh.py` Fleet Mesh · `costing.py` cost engine · `speech.py` Gnani Prisma/Timbre · `safety.py` escalation rules · `sentinel.py` CEO checklist + follow-ups · `fatigue.py` check-ins + live location · `web.py` tracking page + n8n API · `telegram_app.py` bots.
 
 See `docs/ROADMAP.md` for satellite and open data, prediction models, and training on real data.

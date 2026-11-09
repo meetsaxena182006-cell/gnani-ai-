@@ -234,12 +234,16 @@ def _fleet_tools(fleet_id: int) -> list[Tool]:
                           "WHERE v.fleet_id=? AND t.status IN ('unreported','asked')", (fleet_id,))
         return {"events": events, "tolls_not_yet_reported": unreported}
 
+    async def fleet_health():
+        from .. import sentinel
+        return sentinel.fleet_health(fleet_id)
+
     async def analyze_business(question: str):
         from ..llm import deep_reason
         data = {"fleet_status": await fleet_status(), "expenses_week": await expenses_report("week"),
                 "business": business.summary(fleet_id),
                 "trips": [await trip_profit(v["code"]) for v in vehicles()],
-                "watchdog_24h": await watch_report(24), "documents_30d": await documents_expiring(30),
+                "watchdog_24h": await watch_report(24), "sentinel": await fleet_health(), "documents_30d": await documents_expiring(30),
                 "open_incidents": await open_incidents(), "diesel_price": db.fleet(fleet_id)["diesel_price"]}
         return {"analysis": await deep_reason(question, data, role="the owner (CEO view)")}
 
@@ -371,6 +375,10 @@ def _fleet_tools(fleet_id: int) -> list[Tool]:
         Tool("analyze_business", "Careful analysis for strategic or tricky questions (which truck is losing money, "
              "is this load worth it vs others, where are we leaking cost, plan for tomorrow).",
              params({"question": s}, ["question"]), analyze_business),
+        Tool("fleet_health", "CEO Sentinel: is everything running smoothly? A checklist per truck (location, driver "
+             "agent, incidents, driving hours, check-ins, tolls accounted, diesel logged, unconfirmed entries, freight, "
+             "e-way bill, documents) with what exactly is missing. Use for 'sab theek hai?', 'kuch miss to nahi?'.",
+             params({}), fleet_health),
         Tool("fleet_status", "Where every truck is, its trip, last update and any open incident.", params({}), fleet_status),
         Tool("expenses_report", "Confirmed expenses and freight received, grouped by truck and category.",
              params({"period": {"type": "string", "enum": ["today", "week", "all"]}, "vehicle_code": s}), expenses_report),
@@ -405,6 +413,9 @@ You talk to the owner{(' ' + fleet['owner_name']) if fleet.get('owner_name') els
 Trucks: {vs}
 You have eyes on every truck every minute: GPS, NHAI toll crossings, stops, speed, diesel, documents. Each truck has
 a Driver Agent (voice companion) you can reach with message_driver.
+Your job is that NOTHING is missed. When the owner asks if all is well, call fleet_health and give the headline,
+then only the things that need attention. If a driver missed something (a toll, diesel, a document), use
+message_driver to ask the driver politely through his companion.
 Rules:
 - ALWAYS use tools for facts and numbers. Never invent money figures, locations or statuses.
 - For any freight quote or profit question call quote_freight / trip_profit and report the tool's numbers exactly,

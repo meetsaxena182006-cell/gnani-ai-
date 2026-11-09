@@ -79,6 +79,9 @@ CREATE TABLE IF NOT EXISTS reminders_sent (
 CREATE TABLE IF NOT EXISTS trip_plans (
   id INTEGER PRIMARY KEY, trip_id INTEGER, plan TEXT, created_at TEXT
 );
+CREATE TABLE IF NOT EXISTS driver_memory (
+  id INTEGER PRIMARY KEY, vehicle_id INTEGER NOT NULL, fact TEXT NOT NULL, created_at TEXT
+);
 CREATE TABLE IF NOT EXISTS agent_log (
   id INTEGER PRIMARY KEY, ts TEXT, from_agent TEXT, to_agent TEXT, kind TEXT, payload TEXT
 );
@@ -114,7 +117,9 @@ def _migrate(c: sqlite3.Connection) -> None:
                         "origin_lon": "REAL", "eway_bill": "TEXT", "eway_valid_until": "TEXT", "delivered_at": "TEXT",
                         "weight_t": "REAL"},
               "fleets": {"detention_free_h": "REAL DEFAULT 4", "detention_per_day": "REAL DEFAULT 1500",
-                         "payment_terms_days": "INTEGER DEFAULT 30"}}
+                         "payment_terms_days": "INTEGER DEFAULT 30"},
+              "toll_crossings": {"asks": "INTEGER DEFAULT 1"},
+              "expenses": {"odometer_km": "REAL"}}
     for table, cols in wanted.items():
         have = {r[1] for r in c.execute(f"PRAGMA table_info({table})")}
         for col, typ in cols.items():

@@ -273,6 +273,13 @@ async def api_business(req: web.Request) -> web.Response:
     return web.json_response({"fleet": f["code"], **business.summary(f["id"])})
 
 
+async def api_sentinel(req: web.Request) -> web.Response:
+    _auth(req)
+    from . import sentinel
+    f = db.one("SELECT * FROM fleets WHERE upper(code)=upper(?)", (req.query.get("fleet", ""),)) or db.one("SELECT * FROM fleets")
+    return web.json_response({"fleet": f["code"], **sentinel.fleet_health(f["id"])})
+
+
 async def health(req: web.Request) -> web.Response:
     return web.json_response({"ok": True, "live_companions": len(bus.live)})
 
@@ -299,6 +306,7 @@ def build_app() -> web.Application:
         web.post("/api/pod", api_pod),
         web.post("/api/location", api_location),
         web.get("/api/business", api_business),
+        web.get("/api/sentinel", api_sentinel),
         web.get("/api/plan/fleet", api_plan_fleet),
         web.static("/static", STATIC),
     ])

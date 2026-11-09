@@ -18,9 +18,18 @@ table{width:100%;border-collapse:collapse}td,th{padding:6px;border-bottom:1px so
 #log{max-height:300px;overflow:auto;font-size:.88rem}#log div{padding:4px 0;border-bottom:1px dashed var(--line)}
 #chat{height:260px;overflow:auto;white-space:pre-wrap}.me{color:var(--accent);margin-top:8px}.bot{margin-top:4px}
 form{display:flex;gap:8px;margin-top:8px}form input{flex:1}
+#sentinel{display:flex;flex-direction:column;gap:10px}
+.sh{display:flex;align-items:center;gap:12px;flex-wrap:wrap}.sh b{font-size:1.15rem}
+.score{font-variant-numeric:tabular-nums;color:var(--muted)}
+.trk{border-top:1px solid var(--line);padding-top:8px}.trk.bad{border-left:4px solid var(--bad);padding-left:8px}
+.trk.warn{border-left:4px solid var(--warn);padding-left:8px}.trk.ok{border-left:4px solid var(--accent);padding-left:8px}
+.chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
+.chip{font-size:.8rem;padding:3px 8px;border-radius:999px;border:1px solid var(--line);cursor:default}
+.chip.ok{color:var(--accent)}.chip.warn{color:var(--warn);border-color:var(--warn)}.chip.bad{color:#fff;background:var(--bad);border-color:var(--bad)}
 </style></head><body>
 <header><b>🏢 Saarthi Office — CEO Agent</b><select id="fleet"></select><span id="st" class="off"></span></header>
 <div class="grid">
+  <div class="card" style="grid-column:1/-1"><div id="sentinel"><small class="off">👁️ CEO Sentinel loading…</small></div></div>
   <div class="card"><div id="map"></div><table id="trucks"><thead><tr><th>Truck</th><th>Driver</th><th>Trip</th><th>Plan (ETA · next stop)</th><th>Companion</th><th>Speed</th><th>Last seen</th><th>Watchdog</th></tr></thead><tbody></tbody></table></div>
   <div class="card" style="grid-column:1/-1"><b>💼 Business</b> <span id="biz"></span></div>
   <div class="card" style="grid-column:1/-1"><b>🧭 Fleet load plan</b> <small>(best truck for each open load — profit after empty km)</small><div id="fplan"></div></div>
@@ -58,6 +67,12 @@ async function refresh(){
       (markers[v.code] ||= L.marker([v.lat, v.lon]).addTo(map)).setLatLng([v.lat, v.lon]).bindPopup(`${v.reg} · ${v.driver||""}`); }
   });
   if (pts.length && !fitted) { map.fitBounds(pts, {padding:[40,40], maxZoom:12}); fitted = true; }
+  const sn = await api("/api/sentinel?fleet=" + encodeURIComponent(f.code));
+  const esc = x => String(x ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+  document.getElementById("sentinel").innerHTML =
+    `<div class="sh"><b>👁️ CEO Sentinel</b><b>${esc(sn.headline)}</b><span class="score">${sn.score_pct}% of checks clear · checked ${new Date(sn.checked_at).toLocaleTimeString()}</span></div>` +
+    sn.trucks.map(t => `<div class="trk ${t.status}"><b>${esc(t.reg)}</b> · ${esc(t.driver||"-")} <small>${esc(t.trip||"idle")}</small>
+      <div class="chips">${t.checks.map(c => `<span class="chip ${c.status}" title="${esc(c.detail)}">${c.status==="ok"?"✓":c.status==="warn"?"!":"✕"} ${esc(c.label)}${c.status!=="ok"? ": "+esc(c.detail):""}</span>`).join("")}</div></div>`).join("");
   const log = await api("/api/agent-log?limit=40");
   document.getElementById("log").innerHTML = log.map(r => `<div><small>${new Date(r.ts).toLocaleTimeString()}</small> <b>${r.from_agent}</b> → ${r.to_agent}: ${r.kind} <small>${JSON.stringify(r.payload).slice(0,120)}</small></div>`).join("");
   document.getElementById("st").textContent = "updated " + new Date().toLocaleTimeString();

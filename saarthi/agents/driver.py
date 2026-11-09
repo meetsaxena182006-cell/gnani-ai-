@@ -137,6 +137,27 @@ async def native_event(v: dict, msg: dict) -> None:
         await bus.send(to_driver(v, f"💬 {app}: {title}", speak=f"Boss, {title} ka {app} message: {body}"))
 
 
+# ---------------- long-term memory (makes the companion feel like a friend, not a machine) ----------------
+MEMORY_LIMIT = 30
+
+
+def remember_fact(vid: int, fact: str) -> bool:
+    fact = re.sub(r"\s+", " ", (fact or "")).strip()[:200]
+    if len(fact) < 3:
+        return False
+    if db.one("SELECT id FROM driver_memory WHERE vehicle_id=? AND lower(fact)=lower(?)", (vid, fact)):
+        return False
+    db.ex("INSERT INTO driver_memory(vehicle_id, fact, created_at) VALUES(?,?,?)", (vid, fact, db.now()))
+    # keep the newest facts only
+    db.ex("DELETE FROM driver_memory WHERE vehicle_id=? AND id NOT IN (SELECT id FROM driver_memory WHERE vehicle_id=? "
+          "ORDER BY id DESC LIMIT ?)", (vid, vid, MEMORY_LIMIT))
+    return True
+
+
+def memories(vid: int) -> list[str]:
+    return [r["fact"] for r in db.q("SELECT fact FROM driver_memory WHERE vehicle_id=? ORDER BY id", (vid,))]
+
+
 # ---------------- tools ----------------
 class Turn:
     def __init__(self, transcript: str = "") -> None:
@@ -160,10 +181,10 @@ def make_tools(vid: int, turn: Turn) -> list[Tool]:
             raise ValueError("amount must be between 1 and 5,00,000 rupees; ask the driver again")
         t = db.active_trip(vid)
         l = loc()
-        db.ex("INSERT INTO expenses(vehicle_id,trip_id,category,amount,litres,note,lat,lon,status,transcript,created_at)"
-              " VALUES(?,?,?,?,?,?,?,?, 'pending', ?, ?)",
+        db.ex("INSERT INTO expenses(vehicle_id,trip_id,category,amount,litres,note,lat,lon,status,transcript,created_at,"
+              "odometer_km) VALUES(?,?,?,?,?,?,?,?, 'pending', ?, ?, ?)",
               (vid, t["id"] if t else None, category, float(amount), litres, note,
-               l[0] if l else None, l[1] if l else None, turn.transcript, db.now()))
+               l[0] if l else None, l[1] if l else None, turn.transcript, db.now(), v().get("odometer_km")))
         turn.new_pending = True
         return {"status": "pending_confirmation", "say": confirm_prompt(pending_entries(vid))}
 
@@ -391,6 +412,10 @@ def make_tools(vid: int, turn: Turn) -> list[Tool]:
         return db.q("SELECT doc_type, expiry_date, CASE WHEN expiry_date < ? THEN 'EXPIRED' ELSE 'valid' END status "
                     "FROM documents WHERE vehicle_id=? ORDER BY expiry_date", (date.today().isoformat(), vid))
 
+    async def remember(fact: str):
+        """Save something personal the driver shared, to bring up naturally on later days."""
+        return {"saved": remember_fact(vid, fact)}
+
     async def message_office(message: str):
         x = v()
         f = db.fleet(x["fleet_id"])
@@ -450,6 +475,10 @@ def make_tools(vid: int, turn: Turn) -> list[Tool]:
              "safe to continue, will we reach on time, where to refuel/rest, money questions. Say 'ek second, sochta "
              "hoon' first.", params({"question": s}, ["question"]), think_deeply),
         Tool("message_office", "Pass a message to the office/owner.", params({"message": s}, ["message"]), message_office),
+        Tool("remember", "Save one short personal fact the driver shared so you can bring it up on later days "
+             "(family names, village, favourite singer/song, food he likes, health issue, upcoming event like a "
+             "daughter's exam or a wedding). Not money, not trip data. Call silently; don't announce it.",
+             params({"fact": s}, ["fact"]), remember),
     ]
 
 
@@ -552,12 +581,22 @@ PERSONALITY — be human, be talkative:
   Marathi, ...). If he speaks Marwari/Mewari, reply in simple Hindi with a Rajasthani touch ("padharo", "hukum").
   {script}
 
-THINKING — be smart:
-- Before answering, quietly work out what he really needs (he may be tired, worried, or joking).
-- Use tools for every fact: weather, road ahead, tolls, documents, trip money. For anything needing real analysis
-  (plan, compare, will we reach, is it safe, where to refuel/rest, money) call think_deeply. Never guess numbers.
-- Use the SITUATION below (time, speed, hours driving, landmark, unreported tolls) to be proactive: e.g. if tolls
-  are unreported, ask about them naturally; if he has driven 4+ hours, suggest a break.
+THINKING — be smart, reason like a sharp ustaad (silently, never say the steps out loud):
+1. Understand: what does he really want, and in what mood is he (tired, worried, bored, joking, angry)?
+   Short or mumbled words late at night can mean sleepiness: check on him.
+2. Check facts: look at the SITUATION and call the right tool (weather, road ahead, tolls, documents, trip
+   money). Never guess a number, a place, a time or a price.
+3. Think it through: connect the facts (e.g. fog ahead at 2 am + 6 h driving already = suggest stopping at the
+   next dhaba; ETA past midnight + no-entry window = wait outside the city). For anything needing real analysis
+   (plan, compare options, will we reach, is it safe to continue, where to refuel/rest, money) call think_deeply.
+4. Answer simply: one clear suggestion with the main reason, in his words. If unsure, say so and ask.
+- Be proactive from the SITUATION: unreported tolls -> ask naturally; 4+ hours driving -> chai break; open
+  problem -> ask if it is sorted.
+
+MEMORY — you know him:
+- When he shares something personal (wife/children's names, village, favourite singer, a wedding, a health
+  issue), call remember with one short fact.
+- Use WHAT YOU REMEMBER below naturally, like a friend would ("Pinky ka exam kaisa gaya?"), not every turn.
 
 RULES (always):
 - Money mentioned (diesel, toll, khana, repair, challan, bhaada/freight received...) -> log_entry once per amount.
@@ -567,6 +606,8 @@ RULES (always):
   to 112 directly; you never talk to emergency services.
 - Songs: play_music / stop_music. If you did not understand, ask him to repeat.
 {mode}
+
+WHAT YOU REMEMBER ABOUT HIM: {_json.dumps(memories(v["id"]), ensure_ascii=False) if memories(v["id"]) else "nothing yet; get to know him"}
 
 SITUATION (live data, refreshed each turn): {_json.dumps(situation(v), ensure_ascii=False, default=str)}"""
 
