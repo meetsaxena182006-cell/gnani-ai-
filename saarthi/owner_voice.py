@@ -14,6 +14,7 @@ import aiohttp
 
 from . import db
 from .agents import ceo
+from .companion import clean_args
 from .config import settings
 
 log = logging.getLogger("saarthi.owner_voice")
@@ -38,6 +39,11 @@ class OwnerSession:
         self.worker = None
         self.last_speech = time.time()
 
+    async def _rerun(self) -> None:
+        from pipecat.frames.frames import LLMRunFrame
+        if self.worker:
+            await self.worker.queue_frames([LLMRunFrame()])
+
     def _tools(self):
         from pipecat.adapters.llm.schemas.function_schema import FunctionSchema
         from pipecat.adapters.llm.schemas.tools_schema import ToolsSchema
@@ -46,7 +52,7 @@ class OwnerSession:
         for tool in ceo._fleet_tools(self.fleet["id"]):
             async def handler(params, _tool=tool):
                 try:
-                    result = await _tool.fn(**dict(params.arguments))
+                    result = await _tool.fn(**clean_args(_tool, params.arguments))
                 except Exception as e:
                     log.exception("tool %s failed", _tool.name)
                     result = {"error": str(e)}
@@ -88,7 +94,7 @@ class OwnerSession:
             context = LLMContext(messages=[{"role": "system", "content": ceo.system_prompt(self.fleet) + VOICE_RULES}],
                                  tools=self._tools())
             agg = LLMContextAggregatorPair(context, user_params=_user_params(_local_vad()))
-            pipeline = Pipeline([transport.input(), stt, OwnerHeard(code), agg.user(), _llm_for_voice(),
+            pipeline = Pipeline([transport.input(), stt, OwnerHeard(code), agg.user(), _llm_for_voice(rerun=self._rerun),
                                  OwnerSpoken(code), tts, transport.output(), agg.assistant()])
             self.worker = PipelineWorker(pipeline, params=PipelineParams(enable_metrics=True),
                                          cancel_on_idle_timeout=False)

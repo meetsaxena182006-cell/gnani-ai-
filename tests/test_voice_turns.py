@@ -34,3 +34,20 @@ async def test_talk_over_saarthi_reaches_llm(fresh):
                                                        BotStoppedSpeakingFrame(), SleepFrame(1.5)],
                              expected_down_frames=None, ignore_start=True)
     assert any(isinstance(f, LLMContextFrame) for f in down)
+
+
+def test_clean_args_drops_junk_keys():
+    from types import SimpleNamespace
+    from saarthi.companion import clean_args
+    tool = SimpleNamespace(parameters={"type": "object", "properties": {"vehicle": {"type": "string"}}})
+    assert clean_args(tool, {"": {}, "vehicle": "MW-T1"}) == {"vehicle": "MW-T1"}
+    assert clean_args(SimpleNamespace(parameters={}), {"": {}}) == {}
+
+
+def test_groq_sibling_model_added(monkeypatch):
+    from saarthi import config
+    monkeypatch.setenv("LLM2_API_KEY", "x")
+    monkeypatch.setenv("LLM2_BASE_URL", "https://api.groq.com/openai/v1")
+    monkeypatch.setenv("LLM2_MODEL", "openai/gpt-oss-120b")
+    models = [p["model"] for p in config.llm_providers() if "groq" in p["base_url"]]
+    assert models[:2] == ["openai/gpt-oss-120b", "openai/gpt-oss-20b"]

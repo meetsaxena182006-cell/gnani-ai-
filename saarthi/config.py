@@ -64,7 +64,15 @@ def llm_providers() -> list[dict]:
             for m in fallbacks:
                 if all(m != q["model"] for q in out + extra if q["api_key"] == p["api_key"]):
                     extra.append({**p, "name": f"{p['name']}:{m}", "model": m})
-    return out + extra
+    # Groq rate limits are per model: a sibling model on the same key keeps answering when one hits 429
+    groq_more = _list("GROQ_FALLBACK_MODELS", "openai/gpt-oss-20b")
+    fast = []
+    for p in out:
+        if "api.groq.com" in p["base_url"]:
+            for m in groq_more:
+                if all(m != q["model"] for q in out + fast if q["api_key"] == p["api_key"]):
+                    fast.append({**p, "name": f"{p['name']}:{m}", "model": m})
+    return out + fast + extra
 
 
 settings = Settings()

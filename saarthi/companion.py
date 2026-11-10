@@ -109,7 +109,7 @@ class LiveSession(LiveTarget):
         for tool in drv.make_tools(self.vid, self.turn):
             async def handler(params, _tool=tool):
                 try:
-                    result = await _tool.fn(**dict(params.arguments))
+                    result = await _tool.fn(**clean_args(_tool, params.arguments))
                 except Exception as e:
                     log.exception("tool %s failed", _tool.name)
                     result = {"error": str(e)}
@@ -160,7 +160,7 @@ class LiveSession(LiveTarget):
             # silence the companion until reconnect)
             tts = GnaniSSETTSService(api_key=settings.gnani_api_key, aiohttp_session=http, settings=GnaniSSETTSService.Settings(
                 model=settings.tts_model, voice=VOICES.get(self.lang, settings.tts_voice), language=self.lang))
-            llm = _llm_for_voice()
+            llm = _llm_for_voice(rerun=self._rerun)
             context = LLMContext(messages=[{"role": "system", "content": drv.system_prompt(v, is_moving(v), live=True)}],
                                  tools=self._tools())
             self.context = context
@@ -197,6 +197,11 @@ class LiveSession(LiveTarget):
                 if bus.live.get(self.vid) is self:
                     bus.live.pop(self.vid, None)
 
+    async def _rerun(self) -> None:
+        from pipecat.frames.frames import LLMRunFrame
+        if self.worker:
+            await self.worker.queue_frames([LLMRunFrame()])
+
     async def _proactive_loop(self) -> None:
         """Saarthi talks first, like a real co-driver: after a quiet spell it opens a short, useful or friendly topic
         (road ahead, weather, toll/expense not noted, papers expiring, rest, family, a song) - never a lecture."""
@@ -222,7 +227,13 @@ class LiveSession(LiveTarget):
                 log.exception("proactive turn failed")
 
 
-def _llm_for_voice():
+def clean_args(tool, args) -> dict:
+    """Keep only the arguments the tool declares (fast models sometimes send junk like {"": {}})."""
+    allowed = set((tool.parameters or {}).get("properties", {}))
+    return {k: v for k, v in dict(args or {}).items() if k in allowed}
+
+
+def _llm_for_voice(rerun=None):
     """The reasoning layer for a voice call (Gnani does all listening and speaking). Fast providers (Groq) answer
     first - a busy model would lose the whole spoken turn; Gemini models are backups. VOICE_LLM_FIRST=gemini reverses."""
     from .config import llm_providers
@@ -235,7 +246,14 @@ def _llm_for_voice():
         return llms[0]
     from pipecat.pipeline.llm_switcher import LLMSwitcher
     from pipecat.pipeline.service_switcher import ServiceSwitcherStrategyFailover
-    return LLMSwitcher(llms=llms, strategy_type=ServiceSwitcherStrategyFailover)
+    sw = LLMSwitcher(llms=llms, strategy_type=ServiceSwitcherStrategyFailover)
+    if rerun:
+        # a provider failed mid-answer (429/503): the backup answers the SAME turn instead of going silent
+        @sw.strategy.event_handler("on_service_switched")
+        async def _switched(strategy, service):
+            log.warning("voice LLM failover -> %s; re-asking", getattr(service, "name", service))
+            await rerun()
+    return sw
 
 
 def _local_vad():
