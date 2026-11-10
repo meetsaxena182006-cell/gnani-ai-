@@ -72,3 +72,19 @@ def test_rate_limited_model_steps_aside_for_failover():
         new = await sw.strategy.handle_error(err)
         assert new is b
     asyncio.run(go())
+
+
+def test_same_expense_said_once_is_queued_once(tmp_path, monkeypatch):
+    import asyncio
+    from saarthi import db, seed
+    from saarthi.agents import driver as drv
+    monkeypatch.setattr(db.settings, "db_path", str(tmp_path / "t.db"))
+    db._conn = None
+    seed.seed(demo=True)
+    v = db.vehicle_by_code("MW-T1")
+    tools = {t.name: t for t in drv.make_tools(v["id"], drv.Turn("diesel 235 litre 21620"))}
+    async def go():
+        await tools["log_entry"].fn(category="diesel", amount=21620, litres=235)
+        await tools["log_entry"].fn(category="diesel", amount=21620, litres=235)
+    asyncio.run(go())
+    assert len(drv.pending_entries(v["id"])) == 1

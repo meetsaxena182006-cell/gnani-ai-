@@ -179,6 +179,9 @@ def make_tools(vid: int, turn: Turn) -> list[Tool]:
             raise ValueError(f"category must be one of {EXPENSE_CATEGORIES + INCOME_CATEGORIES}")
         if amount is None or amount <= 0 or amount > 500000:
             raise ValueError("amount must be between 1 and 5,00,000 rupees; ask the driver again")
+        # the model sometimes calls the tool twice for one sentence: never queue the same entry twice
+        if any(e["category"] == category and abs(e["amount"] - float(amount)) < 1 for e in pending_entries(vid)):
+            return {"status": "pending_confirmation", "say": confirm_prompt(pending_entries(vid))}
         t = db.active_trip(vid)
         l = loc()
         db.ex("INSERT INTO expenses(vehicle_id,trip_id,category,amount,litres,note,lat,lon,status,transcript,created_at,"
