@@ -51,3 +51,24 @@ def test_groq_sibling_model_added(monkeypatch):
     monkeypatch.setenv("LLM2_MODEL", "openai/gpt-oss-120b")
     models = [p["model"] for p in config.llm_providers() if "groq" in p["base_url"]]
     assert models[:2] == ["openai/gpt-oss-120b", "openai/gpt-oss-20b"]
+
+
+def test_rate_limited_model_steps_aside_for_failover():
+    import asyncio
+    from pipecat.pipeline.llm_switcher import LLMSwitcher
+    from pipecat.pipeline.service_switcher import ServiceSwitcherStrategyFailover
+    from pipecat.frames.frames import ErrorFrame
+    from saarthi.companion import _voice_llm
+
+    a = _voice_llm({"api_key": "x", "base_url": "https://api.groq.com/openai/v1", "model": "a"})
+    b = _voice_llm({"api_key": "x", "base_url": "https://api.groq.com/openai/v1", "model": "b"})
+    sw = LLMSwitcher(llms=[a, b], strategy_type=ServiceSwitcherStrategyFailover)
+
+    async def go():
+        err = ErrorFrame(error="Error during completion: Error code: 429 - rate limit")
+        err.processor = a
+        await a._call_event_handler("on_error", err)
+        assert not a.is_usable
+        new = await sw.strategy.handle_error(err)
+        assert new is b
+    asyncio.run(go())

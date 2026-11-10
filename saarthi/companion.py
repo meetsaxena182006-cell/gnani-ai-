@@ -291,9 +291,32 @@ def _voice_llm(p: dict):
     any other OpenAI-compatible provider (Groq, vLLM...) through the OpenAI service."""
     if "generativelanguage.googleapis.com" in p["base_url"]:
         from pipecat.services.google.llm import GoogleLLMService
-        return GoogleLLMService(api_key=p["api_key"], settings=GoogleLLMService.Settings(model=p["model"]))
+        g = GoogleLLMService(api_key=p["api_key"], settings=GoogleLLMService.Settings(model=p["model"]))
+        _bench_on_error(g)
+        return g
     from pipecat.services.openai.llm import OpenAILLMService
-    return OpenAILLMService(api_key=p["api_key"], base_url=p["base_url"], settings=OpenAILLMService.Settings(model=p["model"]))
+    svc = OpenAILLMService(api_key=p["api_key"], base_url=p["base_url"], settings=OpenAILLMService.Settings(model=p["model"]))
+    # no silent retries on 429/503 (each retry waits seconds while the driver hears nothing): fail fast so the
+    # switcher hands the same turn to the next model at once
+    svc._client = svc._client.with_options(max_retries=0, timeout=20.0)
+    _bench_on_error(svc)
+    return svc
+
+
+def _bench_on_error(svc, rest_s: float = 30.0) -> None:
+    """A rate-limited (429) / overloaded / timed-out model steps aside for `rest_s`, so the LLM switcher fails over
+    to the next model for the SAME turn (Pipecat treats 429 as transient and would otherwise keep the busy one)."""
+    @svc.event_handler("on_error")
+    async def _on_error(service, error):
+        text = f"{getattr(error, 'error', '')} {getattr(error, 'exception', '')}".lower()
+        if any(k in text for k in ("429", "rate limit", "too many", "503", "overloaded", "unavailable", "timeout",
+                                   "timed out", "500", "502")):
+            await service.set_usable(False)
+
+            async def _back():
+                await asyncio.sleep(rest_s)
+                await service.set_usable(True)
+            asyncio.create_task(_back())
 
 
 def _guard_base():
