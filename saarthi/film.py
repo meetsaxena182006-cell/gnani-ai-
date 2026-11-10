@@ -31,10 +31,28 @@ VOICE_TRY = {"saarthi": ["Poorvi", "Suhana", "Veera"], "driver": ["Zayan", "Isha
 _voice_ok: dict[str, str] = {}
 
 # real questions put to the real agents during capture: (after step index, who, text)
-ASK = [(3, "driver", "हाँ सारथी, डीज़ल भरवा लिया — दो सौ पैंतीस लीटर, इक्कीस हज़ार छह सौ बीस रुपये।"),
+ASK = [(3, "driver", "हाँ सारथी, डीज़ल भरवा लिया — 235 लीटर, 21620 रुपये।"),
+       (3, "driver", "हाँ, सही है।"),
        (7, "driver", "सारथी, अभी कितना बाकी है और कब तक पहुँचेंगे?"),
        (12, "owner", "हाँ, वापसी वाला हैदराबाद से उदयपुर का लोड बुक कर दो।"),
        (13, "owner", "इस ट्रिप में कुल कितना ख़र्चा हुआ और कितना बचा? ड्राइवर का हिसाब भी बताओ।")]
+
+FAIL_TEXT = "samajh nahi paaya"
+
+
+async def _owner_voice_answer(fleet: dict, text: str) -> str:
+    """The CEO Agent exactly as on the owner's voice call: same prompt + voice rules + tools, spoken-style answer."""
+    from .agents import ceo
+    from .llm import run_agent
+    from .owner_voice import VOICE_RULES
+    key = f"owner:{fleet['id']}"
+    reply = await run_agent(ceo.system_prompt(fleet) + VOICE_RULES, ceo.memory.get(key), text,
+                            ceo._fleet_tools(fleet["id"]), agent_name=f"ceo:{fleet['code']}")
+    if reply and FAIL_TEXT not in reply:
+        ceo.memory.add(key, "user", text)
+        ceo.memory.add(key, "assistant", reply)
+    return reply
+
 
 _EMOJI = re.compile("[\U0001F000-\U0001FAFF☀-➿️‍]")
 
@@ -112,14 +130,19 @@ async def _capture() -> list[dict]:
                 v = scenario.hero()
                 events.append(_stamp({"kind": who, "text": q, "speak": q, "step": i}))
                 try:
-                    if who == "driver":
-                        reply = await asyncio.wait_for(drv.handle(v, q), 45)
-                        if reply:
-                            events.append(_stamp({"kind": "saarthi", "text": reply, "speak": reply, "live": True, "step": i}))
-                    else:
-                        reply = await asyncio.wait_for(ceo.handle_owner(db.fleet(v["fleet_id"]), q), 60)
-                        if reply:
-                            events.append(_stamp({"kind": "ceo", "text": reply, "speak": reply, "live": True, "step": i}))
+                    reply = None
+                    for attempt in range(3):
+                        if who == "driver":
+                            reply = await asyncio.wait_for(drv.handle(v, q), 45)
+                        else:
+                            reply = await asyncio.wait_for(_owner_voice_answer(db.fleet(v["fleet_id"]), q), 60)
+                        if reply and FAIL_TEXT not in reply:
+                            break
+                        await asyncio.sleep(6)
+                    if not reply or FAIL_TEXT in reply:
+                        raise RuntimeError("agent did not answer")
+                    kind = "saarthi" if who == "driver" else "ceo"
+                    events.append(_stamp({"kind": kind, "text": reply, "speak": reply, "live": True, "step": i}))
                 except Exception as e:
                     log.warning("film: agent question failed: %s", e)
                     events.pop()       # no answer -> leave the question out (never invent the agent's reply)

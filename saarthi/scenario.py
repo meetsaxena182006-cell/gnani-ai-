@@ -320,7 +320,7 @@ async def s_fuel():
 async def s_fuel_done():
     v = hero()
     t = db.active_trip(v["id"])
-    got = db.one("SELECT id FROM expenses WHERE trip_id=? AND category='diesel'", (t["id"],))
+    got = db.one("SELECT id FROM expenses WHERE trip_id=? AND category='diesel' AND status='confirmed'", (t["id"],))
     if not got:  # the driver did not say it by voice: demo entry so the story continues
         expense("diesel", 21620, "Demo Fuel Station, Neemuch (demo)", litres=235)
         await driver_say("डीज़ल 235 लीटर, इक्कीस हज़ार छह सौ बीस रुपये — लिख लिया, बिल की फोटो बाद में ले लेंगे।")
