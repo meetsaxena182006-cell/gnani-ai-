@@ -178,7 +178,7 @@ class LiveSession(LiveTarget):
             context = LLMContext(messages=[{"role": "system", "content": drv.system_prompt(v, is_moving(v), live=True)}],
                                  tools=self._tools())
             self.context = context
-            agg = LLMContextAggregatorPair(context, user_params=LLMUserAggregatorParams(vad_analyzer=SileroVADAnalyzer()))
+            agg = LLMContextAggregatorPair(context, user_params=_user_params(SileroVADAnalyzer))
             guard = CompanionGuard(self)
             spoken = SpokenLog(self)
             pipeline = Pipeline([transport.input(), stt, guard, agg.user(), llm, spoken, tts, transport.output(),
@@ -234,6 +234,23 @@ class LiveSession(LiveTarget):
                     f"numbers (route, weather, tolls, papers). End with a light question.]"}], run_llm=True)])
             except Exception:
                 log.exception("proactive turn failed")
+
+
+def _user_params(vad_cls):
+    """Turn-taking that works on real phones in a noisy cab: the local VAD is only a hint (quiet laptop/phone mics
+    often stay under its volume floor); a turn also starts on Gnani's transcript and ends shortly after the last
+    transcript, so a driver who was heard always gets an answer."""
+    from pipecat.audio.vad.vad_analyzer import VADParams
+    from pipecat.processors.aggregators.llm_response_universal import LLMUserAggregatorParams
+    from pipecat.turns.user_start.transcription_user_turn_start_strategy import TranscriptionUserTurnStartStrategy
+    from pipecat.turns.user_start.vad_user_turn_start_strategy import VADUserTurnStartStrategy
+    from pipecat.turns.user_stop.speech_timeout_user_turn_stop_strategy import SpeechTimeoutUserTurnStopStrategy
+    from pipecat.turns.user_turn_strategies import UserTurnStrategies
+    return LLMUserAggregatorParams(
+        vad_analyzer=vad_cls(params=VADParams(confidence=0.5, start_secs=0.2, stop_secs=0.5, min_volume=0.15)),
+        user_turn_strategies=UserTurnStrategies(
+            start=[VADUserTurnStartStrategy(), TranscriptionUserTurnStartStrategy()],
+            stop=[SpeechTimeoutUserTurnStopStrategy(user_speech_timeout=0.8)]))
 
 
 def _voice_llm(p: dict):
