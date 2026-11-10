@@ -51,9 +51,6 @@ async def _owner_voice_answer(fleet: dict, text: str) -> str:
     key = f"owner:{fleet['id']}"
     reply = await run_agent(ceo.system_prompt(fleet) + VOICE_RULES, ceo.memory.get(key), text,
                             ceo._fleet_tools(fleet["id"]), agent_name=f"ceo:{fleet['code']}")
-    if reply and FAIL_TEXT not in reply:
-        ceo.memory.add(key, "user", text)
-        ceo.memory.add(key, "assistant", reply)
     return reply
 
 
@@ -138,15 +135,19 @@ async def _capture() -> list[dict]:
                 events.append(_stamp({"kind": who, "text": q, "speak": q, "step": i}))
                 try:
                     reply = None
-                    for attempt in range(3):
+                    must = None
+                    if who == "owner":       # the CEO's numbers must match the system's own trip P&L
+                        must = scenario.inr(scenario.money()["profit"]).replace("₹", "")
+                    for attempt in range(4):
                         if who == "driver":
                             reply = await asyncio.wait_for(drv.handle(v, q), 45)
                         else:
                             reply = await asyncio.wait_for(_owner_voice_answer(db.fleet(v["fleet_id"]), q), 60)
-                        if reply and FAIL_TEXT not in reply:
+                        ok = bool(reply) and FAIL_TEXT not in reply and (not must or must in reply.replace(" ", " "))
+                        if ok:
                             break
-                        await asyncio.sleep(6)
-                    if not reply or FAIL_TEXT in reply:
+                        await asyncio.sleep(4)
+                    if not ok:
                         raise RuntimeError("agent did not answer")
                     kind = "saarthi" if who == "driver" else "ceo"
                     events.append(_stamp({"kind": kind, "text": reply, "speak": reply, "live": True, "step": i}))
