@@ -392,7 +392,8 @@ async def links_page(req: web.Request) -> web.Response:
         return f"<span>{'✅' if ok else '❌'} {label}</span> &nbsp; "
 
     status = ("<p>" + st(ai_ready(), "AI brain (LLM key)") + st(bool(settings.gnani_api_key), "Gnani voice (STT + TTS)")
-              + st(turn.configured(), "TURN relay (voice on mobile data)") + "</p>")
+              + st(turn.configured(), "TURN relay (voice on mobile data)")
+              + (f"<br><small>{html.escape(turn.problem())}</small>" if turn.problem() else "") + "</p>")
     body = "<h3>🏢 CEO Agent — owner's office</h3>" + row("Office (CEO Agent)", f"{base}/office?k={k}",
                                                             "Live map, Sentinel checklist, chat with the CEO Agent, every driver conversation.")
     for f in db.q("SELECT * FROM fleets ORDER BY id"):

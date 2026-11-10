@@ -40,8 +40,24 @@ def _cloudflare() -> bool:
     return bool(os.getenv("CF_TURN_KEY_ID") and os.getenv("CF_TURN_API_TOKEN"))
 
 
+def _url() -> str:
+    return os.getenv("TURN_CREDENTIALS_URL", "").strip().strip('"').strip("'")
+
+
 def configured() -> bool:
-    return _cloudflare() or bool(os.getenv("TURN_CREDENTIALS_URL", "").startswith("https://"))
+    return _cloudflare() or ("/turn/credentials" in _url() and "apikey=" in _url().lower() and _url().startswith("https://"))
+
+
+def problem() -> str:
+    """Plain-language reason TURN is off (shown on the links page); never shows the key."""
+    if configured():
+        return ""
+    u = _url()
+    if not u:
+        return "TURN_CREDENTIALS_URL is not set on the server"
+    if "dashboard.metered.ca" in u:
+        return "TURN_CREDENTIALS_URL is the Metered dashboard page; it must be the API link (…metered.live/api/v1/turn/credentials?apiKey=…)"
+    return "TURN_CREDENTIALS_URL does not look like …metered.live/api/v1/turn/credentials?apiKey=…"
 
 
 def _clean(servers: list[dict]) -> list[dict]:
@@ -74,7 +90,7 @@ async def _fetch_cloudflare() -> list[dict]:
 
 async def _fetch_url() -> list[dict]:
     async with httpx.AsyncClient(timeout=10) as c:
-        r = await c.get(os.environ["TURN_CREDENTIALS_URL"])
+        r = await c.get(_url())
         r.raise_for_status()
         data = r.json()
     if isinstance(data, dict):
