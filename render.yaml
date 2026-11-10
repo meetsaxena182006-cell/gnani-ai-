@@ -33,5 +33,9 @@ services:
         sync: false
       - key: TURN_CREDENTIALS_URL   # free no-card TURN instead of Cloudflare: Metered credentials link with apiKey
         sync: false
+      - key: TURN_USERNAME     # ...or Metered's fixed username + password (TURN Server > credentials)
+        sync: false
+      - key: TURN_CREDENTIAL
+        sync: false
       - key: GOOGLE_MAPS_API_KEY   # optional: live traffic on routes (without it: OSRM routes, no traffic)
         sync: false

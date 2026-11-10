@@ -110,3 +110,14 @@ def test_metered_style_url(monkeypatch):
     assert turn.configured()
     servers = asyncio.run(turn.ice_servers())
     assert any(s.get("username") == "u" for s in servers)
+
+
+def test_static_username_password(monkeypatch):
+    for k in ("CF_TURN_KEY_ID", "CF_TURN_API_TOKEN", "TURN_CREDENTIALS_URL", "TURN_URLS"):
+        monkeypatch.delenv(k, raising=False)
+    monkeypatch.setenv("TURN_USERNAME", "u9")
+    monkeypatch.setenv("TURN_CREDENTIAL", "p9")
+    assert turn.configured() and turn.problem() == ""
+    servers = asyncio.run(turn.ice_servers())
+    relay = servers[0]
+    assert relay["username"] == "u9" and "turns:global.relay.metered.ca:443?transport=tcp" in relay["urls"]

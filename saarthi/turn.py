@@ -44,8 +44,22 @@ def _url() -> str:
     return os.getenv("TURN_CREDENTIALS_URL", "").strip().strip('"').strip("'")
 
 
+METERED_URLS = ("turn:global.relay.metered.ca:80,turn:global.relay.metered.ca:80?transport=tcp,"
+                "turn:global.relay.metered.ca:443,turns:global.relay.metered.ca:443?transport=tcp")
+
+
+def _static() -> list[dict]:
+    """Fixed TURN username/password (e.g. Metered's 'Show credentials' box): TURN_USERNAME + TURN_CREDENTIAL,
+    TURN_URLS optional (defaults to Metered's global relay)."""
+    user, cred = os.getenv("TURN_USERNAME", "").strip(), os.getenv("TURN_CREDENTIAL", "").strip()
+    if not (user and cred):
+        return []
+    urls = [u.strip() for u in os.getenv("TURN_URLS", METERED_URLS).split(",") if u.strip()]
+    return _clean([{"urls": urls, "username": user, "credential": cred}])
+
+
 def configured() -> bool:
-    return _cloudflare() or ("/turn/credentials" in _url() and "apikey=" in _url().lower() and _url().startswith("https://"))
+    return bool(_static()) or _cloudflare() or ("/turn/credentials" in _url() and "apikey=" in _url().lower() and _url().startswith("https://"))
 
 
 def problem() -> str:
@@ -54,7 +68,7 @@ def problem() -> str:
         return ""
     u = _url()
     if not u:
-        return "TURN_CREDENTIALS_URL is not set on the server"
+        return "not set on the server: add TURN_USERNAME + TURN_CREDENTIAL (or TURN_CREDENTIALS_URL)"
     if "dashboard.metered.ca" in u:
         return "TURN_CREDENTIALS_URL is the Metered dashboard page; it must be the API link (…metered.live/api/v1/turn/credentials?apiKey=…)"
     return "TURN_CREDENTIALS_URL does not look like …metered.live/api/v1/turn/credentials?apiKey=…"
@@ -101,6 +115,8 @@ async def _fetch_url() -> list[dict]:
 async def ice_servers() -> list[dict]:
     """ICE servers for a new call: Cloudflare TURN (cached) + the configured STUN servers."""
     base = _clean(settings.ice_servers)
+    if _static():
+        return _static() + base
     if not configured():
         return base
     now = time.time()
