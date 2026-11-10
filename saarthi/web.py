@@ -135,6 +135,26 @@ async def api_ice(req: web.Request) -> web.Response:
     return web.json_response(await turn.ice_servers())
 
 
+def _fleet_from(req: web.Request) -> dict:
+    f = db.one("SELECT * FROM fleets WHERE upper(code)=upper(?)", (req.query.get("fleet", ""),)) or db.one("SELECT * FROM fleets")
+    if not f:
+        raise web.HTTPNotFound()
+    return f
+
+
+async def api_owner_offer(req: web.Request) -> web.Response:
+    """Owner's voice call with the CEO Agent (office page mic)."""
+    _auth(req)
+    from . import owner_voice
+    return web.json_response(await owner_voice.offer(_fleet_from(req), await req.json()))
+
+
+async def api_owner_ice(req: web.Request) -> web.Response:
+    _auth(req)
+    from . import turn
+    return web.json_response(await turn.ice_servers())
+
+
 async def api_offer_patch(req: web.Request) -> web.Response:
     from . import companion
     await companion.ice(await req.json())
@@ -360,7 +380,7 @@ async def api_office_feed(req: web.Request) -> web.Response:
     targets = [f"owner:{f['code']}", "owner"] + [f"driver:{c}" for c in codes]
     ph = ",".join("?" * len(targets))
     rows = _rows(f"SELECT id, ts, from_agent, to_agent, kind, payload FROM agent_log WHERE id>? AND "
-                 f"((kind='message' AND to_agent IN ({ph})) OR (kind='driver_said' AND from_agent IN ({ph}))) "
+                 f"((kind='message' AND to_agent IN ({ph})) OR (kind IN ('driver_said','owner_said') AND from_agent IN ({ph}))) "
                  f"ORDER BY id DESC LIMIT 150",
                  (int(req.query.get("since", "0") or 0), *targets, *targets))
     return web.json_response({"rows": rows[::-1], "ai": ai_ready()})
@@ -426,6 +446,9 @@ def build_app() -> web.Application:
         web.post("/api/offer", api_offer),
         web.patch("/api/offer", api_offer_patch),
         web.get("/api/ice", api_ice),
+        web.post("/api/owner/offer", api_owner_offer),
+        web.patch("/api/owner/offer", api_offer_patch),
+        web.get("/api/owner/ice", api_owner_ice),
         web.get("/api/fleet", api_fleet),
         web.post("/api/ceo/chat", api_ceo_chat),
         web.post("/api/fastag/statement", api_fastag_statement),

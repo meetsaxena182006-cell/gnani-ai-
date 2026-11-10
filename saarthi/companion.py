@@ -123,7 +123,6 @@ class LiveSession(LiveTarget):
         return ToolsSchema(standard_tools=schemas)
 
     async def run(self) -> None:
-        from pipecat.audio.vad.silero import SileroVADAnalyzer
         from pipecat.pipeline.pipeline import Pipeline
         from pipecat.pipeline.runner import PipelineRunner
         from pipecat.pipeline.worker import PipelineParams, PipelineWorker
@@ -161,24 +160,11 @@ class LiveSession(LiveTarget):
             # silence the companion until reconnect)
             tts = GnaniSSETTSService(api_key=settings.gnani_api_key, aiohttp_session=http, settings=GnaniSSETTSService.Settings(
                 model=settings.tts_model, voice=VOICES.get(self.lang, settings.tts_voice), language=self.lang))
-            from .config import llm_providers
-            cfg = llm_providers() or [{"api_key": settings.llm_api_key, "base_url": settings.llm_base_url,
-                                       "model": settings.llm_model}]
-            # Voice can't wait: a busy model (Gemini 503) loses that whole turn. Fast providers (Groq) answer
-            # first when configured; Gemini models stay as backups. VOICE_LLM_FIRST=gemini keeps Gemini first.
-            if os.getenv("VOICE_LLM_FIRST", "fast") != "gemini":
-                cfg = sorted(cfg, key=lambda p: "generativelanguage.googleapis.com" in p["base_url"])
-            llms = [_voice_llm(p) for p in cfg[:4]]
-            if len(llms) == 1:
-                llm = llms[0]
-            else:
-                from pipecat.pipeline.llm_switcher import LLMSwitcher
-                from pipecat.pipeline.service_switcher import ServiceSwitcherStrategyFailover
-                llm = LLMSwitcher(llms=llms, strategy_type=ServiceSwitcherStrategyFailover)
+            llm = _llm_for_voice()
             context = LLMContext(messages=[{"role": "system", "content": drv.system_prompt(v, is_moving(v), live=True)}],
                                  tools=self._tools())
             self.context = context
-            agg = LLMContextAggregatorPair(context, user_params=_user_params(SileroVADAnalyzer))
+            agg = LLMContextAggregatorPair(context, user_params=_user_params(_local_vad()))
             guard = CompanionGuard(self)
             spoken = SpokenLog(self)
             pipeline = Pipeline([transport.input(), stt, guard, agg.user(), llm, spoken, tts, transport.output(),
@@ -236,7 +222,31 @@ class LiveSession(LiveTarget):
                 log.exception("proactive turn failed")
 
 
-def _user_params(vad_cls):
+def _llm_for_voice():
+    """The reasoning layer for a voice call (Gnani does all listening and speaking). Fast providers (Groq) answer
+    first - a busy model would lose the whole spoken turn; Gemini models are backups. VOICE_LLM_FIRST=gemini reverses."""
+    from .config import llm_providers
+    cfg = llm_providers() or [{"api_key": settings.llm_api_key, "base_url": settings.llm_base_url,
+                               "model": settings.llm_model}]
+    if os.getenv("VOICE_LLM_FIRST", "fast") != "gemini":
+        cfg = sorted(cfg, key=lambda p: "generativelanguage.googleapis.com" in p["base_url"])
+    llms = [_voice_llm(p) for p in cfg[:4]]
+    if len(llms) == 1:
+        return llms[0]
+    from pipecat.pipeline.llm_switcher import LLMSwitcher
+    from pipecat.pipeline.service_switcher import ServiceSwitcherStrategyFailover
+    return LLMSwitcher(llms=llms, strategy_type=ServiceSwitcherStrategyFailover)
+
+
+def _local_vad():
+    """Local Silero VAD only when asked (LOCAL_VAD=on) or when the segmented HTTP STT needs it to cut speech."""
+    if os.getenv("LOCAL_VAD", "off") == "on" or os.getenv("STT_MODE", "stream") == "http":
+        from pipecat.audio.vad.silero import SileroVADAnalyzer
+        return SileroVADAnalyzer
+    return None
+
+
+def _user_params(vad_cls=None):
     """Turn-taking that works on real phones in a noisy cab: the local VAD is only a hint (quiet laptop/phone mics
     often stay under its volume floor); a turn also starts on Gnani's transcript and ends shortly after the last
     transcript, so a driver who was heard always gets an answer."""
@@ -246,11 +256,16 @@ def _user_params(vad_cls):
     from pipecat.turns.user_start.vad_user_turn_start_strategy import VADUserTurnStartStrategy
     from pipecat.turns.user_stop.speech_timeout_user_turn_stop_strategy import SpeechTimeoutUserTurnStopStrategy
     from pipecat.turns.user_turn_strategies import UserTurnStrategies
+    stop = [SpeechTimeoutUserTurnStopStrategy(user_speech_timeout=0.8)]
+    if vad_cls is None:
+        # Gnani's streaming STT already does server-side voice detection; skipping the local Silero model saves
+        # most of the CPU on small servers (a starved CPU stretches audio and the reply never comes)
+        return LLMUserAggregatorParams(user_turn_strategies=UserTurnStrategies(
+            start=[TranscriptionUserTurnStartStrategy()], stop=stop))
     return LLMUserAggregatorParams(
         vad_analyzer=vad_cls(params=VADParams(confidence=0.5, start_secs=0.2, stop_secs=0.5, min_volume=0.15)),
         user_turn_strategies=UserTurnStrategies(
-            start=[VADUserTurnStartStrategy(), TranscriptionUserTurnStartStrategy()],
-            stop=[SpeechTimeoutUserTurnStopStrategy(user_speech_timeout=0.8)]))
+            start=[VADUserTurnStartStrategy(), TranscriptionUserTurnStartStrategy()], stop=stop))
 
 
 def _voice_llm(p: dict):

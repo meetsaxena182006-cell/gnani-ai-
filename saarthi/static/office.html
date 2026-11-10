@@ -31,7 +31,7 @@ form{display:flex;gap:8px;margin-top:8px}form input{flex:1}
 .chip{font-size:.8rem;padding:3px 8px;border-radius:999px;border:1px solid var(--line);cursor:default}
 .chip.ok{color:var(--accent)}.chip.warn{color:var(--warn);border-color:var(--warn)}.chip.bad{color:#fff;background:var(--bad);border-color:var(--bad)}
 </style></head><body>
-<header><b>🏢 Saarthi Office — CEO Agent</b><select id="fleet"></select><span id="st" class="off"></span><a id="links" style="margin-left:auto;color:var(--accent)" target="_blank">🔗 All links</a></header>
+<header><b>🏢 Saarthi Office — CEO Agent</b><select id="fleet"></select><span id="st" class="off"></span><button id="talk" style="margin-left:auto;font-weight:600">🎙️ CEO से बात करें</button><span id="vst" class="off"></span><audio id="ceoOut" autoplay playsinline></audio><a id="links" style="color:var(--accent)" target="_blank">🔗 All links</a></header>
 <div class="grid">
   <div class="card" style="grid-column:1/-1"><div id="sentinel"><small class="off">👁️ CEO Sentinel loading…</small></div></div>
   <div class="card"><div id="map"></div><table id="trucks"><thead><tr><th>Truck</th><th>Driver</th><th>Trip</th><th>Plan (ETA · next stop)</th><th>Companion</th><th>Speed</th><th>Last seen</th><th>Watchdog</th></tr></thead><tbody></tbody></table></div>
@@ -124,6 +124,7 @@ async function conv(){
     const box = document.getElementById("conv");
     box.insertAdjacentHTML("beforeend", d.rows.map(r => {
       const t = new Date(r.ts).toLocaleTimeString([], {hour:"2-digit", minute:"2-digit"});
+      if (r.kind === "owner_said") return `<div class="m own" style="border-left-color:var(--fg)"><small>🧑‍💼 You (voice) · ${t}</small><br>${escH(r.payload.text)}</div>`;
       if (r.kind === "driver_said") return `<div class="m drv"><small>🧑‍✈️ Driver ${escH(r.payload.vehicle)} · ${t}</small><br>${escH(r.payload.text)}</div>`;
       if (r.to_agent.startsWith("owner")) return `<div class="m own"><small>📲 CEO Agent → you · ${t}</small><br>${escH(r.payload.text)}</div>`;
       return `<div class="m ag"><small>🤖 Driver Agent → ${escH(r.payload.vehicle)} · ${t}</small><br>${escH(r.payload.text)}</div>`;
@@ -131,6 +132,28 @@ async function conv(){
     csince = d.rows[d.rows.length - 1].id; box.scrollTop = 1e9;
   } catch(_) {}
 }
+// ---- voice-first CEO: talk to the office manager like a phone call (Gnani listens + speaks) ----
+let vpc = null;
+async function ceoCall(){
+  const st = document.getElementById("vst"), btn = document.getElementById("talk");
+  if (vpc) { try { vpc.close(); } catch(_) {} vpc = null; btn.textContent = "🎙️ CEO से बात करें"; st.textContent = ""; return; }
+  btn.textContent = "⏹️ कॉल बंद करें"; st.textContent = " जुड़ रहा है…";
+  const fl = document.getElementById("fleet").value || "";
+  let ice = [{urls:"stun:stun.l.google.com:19302"}];
+  try { ice = await api(`/api/owner/ice?fleet=${encodeURIComponent(fl)}`); } catch(_) {}
+  vpc = new RTCPeerConnection({iceServers: ice});
+  vpc.createDataChannel("ceo", {ordered:true});
+  vpc.ontrack = e => { document.getElementById("ceoOut").srcObject = e.streams[0] || new MediaStream([e.track]); };
+  const mic = await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:true, noiseSuppression:true, autoGainControl:true, channelCount:1}});
+  vpc.addTransceiver(mic.getAudioTracks()[0], {direction:"sendrecv"});
+  vpc.addTransceiver("video", {direction:"recvonly"});
+  vpc.onconnectionstatechange = () => { st.textContent = vpc && vpc.connectionState === "connected" ? " 🟢 CEO सुन रहा है" : " " + (vpc ? vpc.connectionState : ""); };
+  await vpc.setLocalDescription(await vpc.createOffer());
+  await new Promise(r => { if (vpc.iceGatheringState === "complete") r(); else { vpc.onicegatheringstatechange = () => vpc.iceGatheringState === "complete" && r(); setTimeout(r, 2500); } });
+  const ans = await api(`/api/owner/offer?fleet=${encodeURIComponent(fl)}`, {method:"POST", body: JSON.stringify({sdp: vpc.localDescription.sdp, type: vpc.localDescription.type})});
+  await vpc.setRemoteDescription(ans);
+}
+document.getElementById("talk").onclick = () => ceoCall().catch(e => { document.getElementById("vst").textContent = " ❌ " + e.message; vpc = null; document.getElementById("talk").textContent = "🎙️ CEO से बात करें"; });
 document.getElementById("links").href = "/links?k=" + encodeURIComponent(KEY || "");
 refresh(); setInterval(refresh, 15000); setInterval(conv, 2500); setTimeout(conv, 800);
 </script></body></html>
