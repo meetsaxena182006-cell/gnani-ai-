@@ -10,6 +10,13 @@ create a TURN key in the Cloudflare dashboard (Realtime -> TURN Server) and put 
 The key stays on the server. Short-lived credentials (24 h) are generated from it and refreshed before they
 expire; both the phone and the server side of the call use them. Without these settings, ICE_SERVERS is used
 as before (STUN only by default).
+
+Free alternative without a card: Metered (https://www.metered.ca/stun-turn, free 20 GB/month). Create an app,
+then set the credentials link it shows, with your API key:
+
+    TURN_CREDENTIALS_URL=https://<your-app>.metered.live/api/v1/turn/credentials?apiKey=<key>
+
+Any URL that returns a JSON list of ICE servers (or {"iceServers": [...]}) works.
 """
 from __future__ import annotations
 
@@ -29,8 +36,12 @@ REFRESH_BEFORE_S = 3600
 _cache: dict = {"servers": None, "expires": 0.0}
 
 
-def configured() -> bool:
+def _cloudflare() -> bool:
     return bool(os.getenv("CF_TURN_KEY_ID") and os.getenv("CF_TURN_API_TOKEN"))
+
+
+def configured() -> bool:
+    return _cloudflare() or bool(os.getenv("TURN_CREDENTIALS_URL", "").startswith("https://"))
 
 
 def _clean(servers: list[dict]) -> list[dict]:
@@ -61,6 +72,16 @@ async def _fetch_cloudflare() -> list[dict]:
     return _clean(data if isinstance(data, list) else [data])
 
 
+async def _fetch_url() -> list[dict]:
+    async with httpx.AsyncClient(timeout=10) as c:
+        r = await c.get(os.environ["TURN_CREDENTIALS_URL"])
+        r.raise_for_status()
+        data = r.json()
+    if isinstance(data, dict):
+        data = data.get("iceServers") or data.get("ice_servers") or []
+    return _clean(data if isinstance(data, list) else [data])
+
+
 async def ice_servers() -> list[dict]:
     """ICE servers for a new call: Cloudflare TURN (cached) + the configured STUN servers."""
     base = _clean(settings.ice_servers)
@@ -69,11 +90,11 @@ async def ice_servers() -> list[dict]:
     now = time.time()
     if _cache["servers"] is None or now > _cache["expires"] - REFRESH_BEFORE_S:
         try:
-            _cache["servers"] = await _fetch_cloudflare()
+            _cache["servers"] = await (_fetch_cloudflare() if _cloudflare() else _fetch_url())
             _cache["expires"] = now + TTL_S
-            log.info("Cloudflare TURN credentials refreshed")
-        except Exception as e:  # keep the last good credentials if Cloudflare is briefly unreachable
-            log.warning("Cloudflare TURN credentials failed: %s", e)
+            log.info("TURN credentials refreshed (%s)", "Cloudflare" if _cloudflare() else "TURN_CREDENTIALS_URL")
+        except Exception as e:  # keep the last good credentials if the provider is briefly unreachable
+            log.warning("TURN credentials failed: %s", type(e).__name__)
             if _cache["servers"] is None:
                 return base
     have = {u for s in _cache["servers"] for u in s["urls"]}

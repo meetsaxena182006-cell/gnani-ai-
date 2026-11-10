@@ -83,3 +83,30 @@ def test_cloudflare_down_falls_back_to_stun(monkeypatch):
     _setup(monkeypatch, httpx.ConnectError("offline"))
     servers = asyncio.run(turn.ice_servers())
     assert servers and all("username" not in s for s in servers)
+
+
+def test_metered_style_url(monkeypatch):
+    monkeypatch.delenv("CF_TURN_KEY_ID", raising=False)
+    monkeypatch.delenv("CF_TURN_API_TOKEN", raising=False)
+    monkeypatch.setenv("TURN_CREDENTIALS_URL", "https://demo.metered.live/api/v1/turn/credentials?apiKey=x")
+    monkeypatch.setattr(turn, "_cache", {"servers": None, "expires": 0.0})
+    reply = [{"urls": "stun:stun.relay.metered.ca:80"},
+             {"urls": "turns:global.relay.metered.ca:443?transport=tcp", "username": "u", "credential": "c"}]
+
+    class C:
+        def __init__(self, *a, **k):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *a):
+            return False
+
+        async def get(self, url):
+            assert "apiKey=x" in url
+            return _Resp(reply)
+    monkeypatch.setattr(httpx, "AsyncClient", C)
+    assert turn.configured()
+    servers = asyncio.run(turn.ice_servers())
+    assert any(s.get("username") == "u" for s in servers)
