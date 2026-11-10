@@ -2,6 +2,7 @@
 via vLLM, ...). Speech is always Gnani; this is only the reasoning step."""
 from __future__ import annotations
 
+import os
 import json
 import logging
 from collections import defaultdict, deque
@@ -45,6 +46,9 @@ def providers() -> list[tuple[object, str, str]]:
         from .config import llm_providers
         cfg = llm_providers() or [{"name": "default", "api_key": settings.llm_api_key or "missing",
                                    "base_url": settings.llm_base_url, "model": settings.llm_model}]
+        # Groq (fast, rarely busy) answers first; Gemini models are the backup. LLM_FIRST=gemini to reverse.
+        if os.getenv("LLM_FIRST", "fast") != "gemini":
+            cfg = sorted(cfg, key=lambda p: "generativelanguage.googleapis.com" in p["base_url"])
         _providers = [(AsyncOpenAI(api_key=p["api_key"], base_url=p["base_url"], timeout=30, max_retries=1),
                        p["model"], p["name"])
                       for p in cfg]

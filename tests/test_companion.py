@@ -22,14 +22,16 @@ def session(code="MW-T1"):
 
 
 def test_addressing_rules():
-    assert addressed("saarthi diesel 4500 ka daala", 0)
-    assert addressed("सारथी सुनो", 0)
-    assert addressed("bhai tyre phat gaya", 0)          # breakdown always gets through
-    assert not addressed("haan bhai main pahunch raha hoon ghar", 0)  # talking to family on the phone
-    assert addressed("haan bhai", time.time())           # open conversation
+    assert addressed("saarthi diesel 4500 ka daala", 0, "wake")
+    assert addressed("सारथी सुनो", 0, "wake")
+    assert addressed("bhai tyre phat gaya", 0, "wake")          # breakdown always gets through
+    assert not addressed("haan bhai main pahunch raha hoon ghar", 0, "wake")  # talking to family on the phone
+    assert addressed("haan bhai", time.time(), "wake")           # open conversation
 
 
-async def test_background_talk_is_not_sent_to_llm(fresh):
+async def test_background_talk_is_not_sent_to_llm(fresh, monkeypatch):
+    from saarthi import companion
+    monkeypatch.setattr(companion, "ADDRESS_MODE", "wake")   # passengers in the cab: only answer when addressed
     down, _ = await run_test(CompanionGuard(session()), frames_to_send=[tf("mummy ko bolo khana bana le")],
                              expected_down_frames=[])
     assert not down
@@ -79,3 +81,7 @@ async def test_gps_from_phone_updates_location(fresh):
                    frames_to_send=[InputTransportMessageFrame(message={"type": "location", "lat": 24.6, "lon": 73.8, "speed": 15})])
     v = db.vehicle_by_code("MW-T1")
     assert v["last_lat"] == 24.6 and round(v["last_speed_kmph"]) == 54
+
+
+def test_always_mode_answers_everything():
+    assert addressed("haan bhai main pahunch raha hoon ghar", 0, "always")

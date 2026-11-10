@@ -36,7 +36,10 @@ log = logging.getLogger("saarthi.companion")
 
 WAKE_WORDS = re.compile(r"saa?r[ae]?thi|सारथी|सारथि|ਸਾਰਥੀ|સારથી|sarthi|sarathy", re.I)
 CONVERSATION_OPEN_S = 90
-ADDRESS_MODE = "wake"  # "wake": respond when addressed / in conversation / emergency; "always": respond to all speech
+# "always" (default): answer everything the driver says (driver alone in the cab). "wake": only when addressed /
+# in an open conversation / emergency (use when passengers talk a lot).
+ADDRESS_MODE = os.getenv("COMPANION_ADDRESS_MODE", "always")
+PROACTIVE_S = int(os.getenv("COMPANION_PROACTIVE_S", "150"))  # quiet this long -> Saarthi starts talking itself
 
 # Timbre v2.5 voice per language (change to taste after listening)
 VOICES = {"hi-IN": "Poorvi", "pa-IN": "Zayan", "gu-IN": "Veera", "mr-IN": "Ishaan", "bn-IN": "Dhruva",
@@ -50,8 +53,8 @@ def speakable(text: str) -> str:
     return " ".join(text.split())
 
 
-def addressed(text: str, last_bot_speech: float, mode: str = ADDRESS_MODE) -> bool:
-    if mode == "always":
+def addressed(text: str, last_bot_speech: float, mode: str | None = None) -> bool:
+    if (mode or ADDRESS_MODE) == "always":
         return True
     if rule_severity(text):  # emergency or breakdown words always reach the agent
         return True
@@ -69,6 +72,8 @@ class LiveSession(LiveTarget):
         self.turn = drv.Turn()
         self.last_bot_speech = time.time()
         self.lang = vehicle.get("lang") or "hi-IN"
+        self.last_driver_speech = time.time()
+        self.proactive_n = 0
 
     # ---------- delivery from other agents ----------
     async def deliver(self, out: Out) -> None:
@@ -136,11 +141,22 @@ class LiveSession(LiveTarget):
             transport = SmallWebRTCTransport(webrtc_connection=self.connection,
                                              params=TransportParams(audio_in_enabled=True, audio_out_enabled=True))
             cands = list(dict.fromkeys([self.lang, *settings.stt_lang_candidates]))[:4]
-            stt = GnaniHttpSTTService(
-                api_key=settings.gnani_api_key, aiohttp_session=http,
-                settings=GnaniHttpSTTService.Settings(
-                    model="prisma-v3.0", language="indic-auto", language_candidates=cands if len(cands) >= 2 else None,
-                    format="transcribe", keywords=load_keyterms() or None, topic=DEFAULT_TOPIC))
+            if os.getenv("STT_MODE", "stream") == "http":
+                stt = GnaniHttpSTTService(
+                    api_key=settings.gnani_api_key, aiohttp_session=http,
+                    settings=GnaniHttpSTTService.Settings(
+                        model="prisma-v3.0", language="indic-auto",
+                        language_candidates=cands if len(cands) >= 2 else None,
+                        format="transcribe", keywords=load_keyterms() or None, topic=DEFAULT_TOPIC))
+            else:
+                # real-time WebSocket streaming: the transcript is ready the moment the driver stops talking
+                from pipecat_gnani import GnaniSTTService
+                stt = GnaniSTTService(
+                    api_key=settings.gnani_api_key, keepalive_timeout=8.0,
+                    settings=GnaniSTTService.Settings(
+                        model="prisma-v3.0", language="indic-auto",
+                        language_candidates=cands if len(cands) >= 2 else None,
+                        format="transcribe", keywords=load_keyterms() or None))
             # SSE = one HTTP stream per reply: survives network drops on highways (a dropped WebSocket would
             # silence the companion until reconnect)
             tts = GnaniSSETTSService(api_key=settings.gnani_api_key, aiohttp_session=http, settings=GnaniSSETTSService.Settings(
@@ -185,13 +201,39 @@ class LiveSession(LiveTarget):
                 db.log_agent(f"driver:{self.code}", "system", "companion_offline", {})
                 await self.worker.cancel()
 
+            proactive = asyncio.create_task(self._proactive_loop())
             try:
                 runner = PipelineRunner(handle_sigint=False)
                 await runner.add_workers(self.worker)
                 await runner.run()
             finally:
+                proactive.cancel()
                 if bus.live.get(self.vid) is self:
                     bus.live.pop(self.vid, None)
+
+    async def _proactive_loop(self) -> None:
+        """Saarthi talks first, like a real co-driver: after a quiet spell it opens a short, useful or friendly topic
+        (road ahead, weather, toll/expense not noted, papers expiring, rest, family, a song) - never a lecture."""
+        from pipecat.frames.frames import LLMMessagesAppendFrame
+        topics = ["road and traffic ahead on this route, and the ETA", "weather ahead and what it means for driving",
+                  "any toll, diesel or expense not yet noted - ask for the amount", "documents/insurance expiring soon",
+                  "a tea/rest break if driving long", "friendly chat - family, food, cricket - and offer a Hindi song"]
+        while True:
+            await asyncio.sleep(20)
+            quiet = time.time() - max(self.last_bot_speech, self.last_driver_speech)
+            if not self.worker or quiet < PROACTIVE_S * (1 + min(self.proactive_n, 3)):
+                continue
+            topic = topics[self.proactive_n % len(topics)]
+            self.proactive_n += 1
+            self.last_bot_speech = time.time()
+            try:
+                self.refresh_context(db.vehicle(self.vid))
+                await self.worker.queue_frames([LLMMessagesAppendFrame(messages=[{"role": "system", "content":
+                    f"[The driver has been quiet for {int(quiet // 60)} min. Start the conversation yourself like a "
+                    f"friendly co-driver, in 1-2 short spoken sentences. Topic: {topic}. Use your tools for real "
+                    f"numbers (route, weather, tolls, papers). End with a light question.]"}], run_llm=True)])
+            except Exception:
+                log.exception("proactive turn failed")
 
 
 def _voice_llm(p: dict):
@@ -256,6 +298,8 @@ class CompanionGuard(_guard_base()):
                 db.ex("UPDATE vehicles SET lang=? WHERE id=?", (lang, self.s.vid))
                 await self.push_frame(TTSUpdateSettingsFrame(settings={"voice": VOICES[lang], "language": lang}))
             if text:
+                self.s.last_driver_speech = time.time()
+                self.s.proactive_n = 0
                 db.log_agent(f"driver:{self.s.code}", "driver_agent", "driver_said",
                              {"text": text, "lang": lang, "vehicle": self.s.code, "voice": True})
             v = db.vehicle(self.s.vid)
