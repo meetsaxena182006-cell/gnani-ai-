@@ -15,6 +15,7 @@ All thresholds are rules in code (never decided by the LLM), so the result is th
 from __future__ import annotations
 
 import logging
+import os
 from datetime import date, datetime, timedelta, timezone
 
 from . import db
@@ -27,7 +28,7 @@ log = logging.getLogger("saarthi.sentinel")
 
 GPS_STALE_MIN = 5
 GPS_OFFLINE_MIN = 30
-FOLLOWUP_MIN = 30          # re-ask an unanswered toll question after this long
+FOLLOWUP_MIN = int(os.getenv("SENTINEL_FOLLOWUP_MIN", "30"))         # re-ask an unanswered toll question after this long
 BREAK_AFTER_H = 4.5        # MTW Act: rest within 5 h of driving
 LIMIT_H = 8.0              # MTW Act: 8 h driving a day
 FUEL_RANGE_WARN = 0.85     # km since last fill > 85% of a full tank's range -> diesel probably not logged
@@ -71,7 +72,7 @@ def audit_vehicle(v: dict) -> dict:
     reachable = vid in bus.live or bool(v.get("driver_chat_id"))
     checks.append(_check("companion", "Driver Agent",
                          OK if vid in bus.live else (WARN if reachable or not t else BAD),
-                         "live in the cab" if vid in bus.live else ("Telegram only" if reachable else "unreachable")))
+                         "live in the cab" if vid in bus.live else ("messages only, voice off" if reachable else "unreachable")))
 
     # 3. open breakdown / emergency
     inc = db.one("SELECT severity, description FROM incidents WHERE vehicle_id=? AND status='open' ORDER BY id DESC LIMIT 1", (vid,))
@@ -227,25 +228,26 @@ async def tick() -> None:
 
 
 async def _toll_followup(v: dict, t: dict, f: dict, watchdog) -> None:
+    """Each toll question runs on its own clock, so a newer question never delays an older one."""
     asked = db.q("SELECT * FROM toll_crossings WHERE trip_id=? AND status='asked' ORDER BY id", (t["id"],))
-    if not asked:
-        return
-    mins = _mins_since(asked[-1]["asked_at"]) or 0
-    if mins < FOLLOWUP_MIN:
-        return
-    times = max(r.get("asks") or 1 for r in asked)
-    names = " aur ".join(r["plaza"] for r in asked[:3])
-    exp = sum(r["expected_fee"] or 0 for r in asked)
-    ids = [r["id"] for r in asked]
-    marks = ",".join("?" * len(ids))
-    if times < 2:
+    due = [r for r in asked if (_mins_since(r["asked_at"]) or 0) >= FOLLOWUP_MIN]
+    reask = [r for r in due if (r.get("asks") or 1) < 2]
+    overdue = [r for r in due if (r.get("asks") or 1) >= 2
+               and not db.one("SELECT key FROM reminders_sent WHERE key=?", (f"sentinel:toll_escalate:{r['id']}",))]
+    if reask:
         # second ask, phrased like a person who noticed it was forgotten
+        names = " aur ".join(r["plaza"] for r in reask[:3])
+        ids = [r["id"] for r in reask]
         text = (f"Driver sahab, ek baat reh gayi — {names} toll ka kitna laga tha? Bas amount bol dijiye, "
                 f"main likh leta hoon.")
-        db.ex(f"UPDATE toll_crossings SET asked_at=?, asks=2 WHERE id IN ({marks})", (db.now(), *ids))
+        db.ex(f"UPDATE toll_crossings SET asked_at=?, asks=2 WHERE id IN ({','.join('?' * len(ids))})", (db.now(), *ids))
         watchdog.event(v["id"], "toll_followup", names)
         await watchdog.ask_driver(v, text, "toll_followup")
-    elif _once(f"sentinel:toll_escalate:{min(ids)}"):
+    if overdue:
+        names = " aur ".join(r["plaza"] for r in overdue[:3])
+        exp = sum(r["expected_fee"] or 0 for r in overdue)
+        for r in overdue:
+            _once(f"sentinel:toll_escalate:{r['id']}")
         watchdog.event(v["id"], "toll_escalated", names)
         db.log_agent(f"ceo:{f['code']}", "owner", "toll_escalated", {"plazas": names, "expected": exp})
         o = ceo.owner_out(f, f"🧾 {v['reg_label']} ({v['driver_name'] or 'driver'}) crossed {names} but has not told "

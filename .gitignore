@@ -16,3 +16,6 @@ android/local.properties
 android/.idea/
 *.apk
 bin/
+data/review_link.txt
+data/live_link.txt
+*.pem

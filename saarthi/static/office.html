@@ -16,6 +16,10 @@ button{background:var(--accent);color:#fff;border:0;cursor:pointer}
 table{width:100%;border-collapse:collapse}td,th{padding:6px;border-bottom:1px solid var(--line);text-align:left;font-size:.92rem}
 .live{color:var(--accent);font-weight:600}.off{color:var(--muted)}
 #log{max-height:300px;overflow:auto;font-size:.88rem}#log div{padding:4px 0;border-bottom:1px dashed var(--line)}
+#conv{height:420px;overflow:auto;display:flex;flex-direction:column;gap:6px;margin-top:8px}
+.m{padding:7px 10px;border-radius:10px;border:1px solid var(--line);font-size:.9rem;white-space:pre-wrap}
+.m.own{border-left:4px solid var(--accent)}.m.drv{border-left:4px solid var(--warn)}.m.ag{border-left:4px solid var(--muted)}
+.m small{color:var(--muted)}
 #chat{height:260px;overflow:auto;white-space:pre-wrap}.me{color:var(--accent);margin-top:8px}.bot{margin-top:4px}
 form{display:flex;gap:8px;margin-top:8px}form input{flex:1}
 #sentinel{display:flex;flex-direction:column;gap:10px}
@@ -27,10 +31,12 @@ form{display:flex;gap:8px;margin-top:8px}form input{flex:1}
 .chip{font-size:.8rem;padding:3px 8px;border-radius:999px;border:1px solid var(--line);cursor:default}
 .chip.ok{color:var(--accent)}.chip.warn{color:var(--warn);border-color:var(--warn)}.chip.bad{color:#fff;background:var(--bad);border-color:var(--bad)}
 </style></head><body>
-<header><b>🏢 Saarthi Office — CEO Agent</b><select id="fleet"></select><span id="st" class="off"></span></header>
+<header><b>🏢 Saarthi Office — CEO Agent</b><select id="fleet"></select><span id="st" class="off"></span><a id="links" style="margin-left:auto;color:var(--accent)" target="_blank">🔗 All links</a></header>
 <div class="grid">
   <div class="card" style="grid-column:1/-1"><div id="sentinel"><small class="off">👁️ CEO Sentinel loading…</small></div></div>
   <div class="card"><div id="map"></div><table id="trucks"><thead><tr><th>Truck</th><th>Driver</th><th>Trip</th><th>Plan (ETA · next stop)</th><th>Companion</th><th>Speed</th><th>Last seen</th><th>Watchdog</th></tr></thead><tbody></tbody></table></div>
+  <div class="card"><b>💬 Conversations</b> <small>(what the CEO Agent tells you, and every driver ↔ Driver Agent talk)</small>
+    <div id="conv"></div></div>
   <div class="card" style="grid-column:1/-1"><b>💼 Business</b> <span id="biz"></span></div>
   <div class="card" style="grid-column:1/-1"><b>🧭 Fleet load plan</b> <small>(best truck for each open load — profit after empty km)</small><div id="fplan"></div></div>
   <div class="card"><b>Ask the CEO Agent</b><div id="chat"></div>
@@ -41,7 +47,7 @@ form{display:flex;gap:8px;margin-top:8px}form input{flex:1}
 </div>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script>
-let KEY; try { KEY = localStorage.getItem("saarthi_key"); } catch(_) {}
+let KEY = new URLSearchParams(location.search).get("k"); try { if (KEY) localStorage.setItem("saarthi_key", KEY); else KEY = localStorage.getItem("saarthi_key"); } catch(_) {}
 if (!KEY) { KEY = prompt("Office key (API_SHARED_SECRET)"); try { localStorage.setItem("saarthi_key", KEY); } catch(_) {} }
 const H = {"X-Saarthi-Key": KEY, "Content-Type": "application/json"};
 const api = (p, o={}) => fetch(p, {...o, headers:H}).then(r => { if (r.status === 401) { try{localStorage.removeItem("saarthi_key")}catch(_){}; throw new Error("bad key"); } return r.json(); });
@@ -106,5 +112,25 @@ document.getElementById("ft").onsubmit = async e => { e.preventDefault();
   const r = await fetch("/api/fastag/statement", {method:"POST", headers:{"X-Saarthi-Key": KEY, "Content-Type":"text/csv"}, body: await f.text()});
   const j = await r.json();
   document.getElementById("ftr").textContent = `${j.rows} deductions: ${j.matched} matched to GPS crossings, ${j.suspect} suspicious (no crossing — dispute), ${j.unknown_vehicle} unknown vehicle`; refresh(); };
-refresh(); setInterval(refresh, 15000);
+// conversations: owner inbox + driver talks (2.5 s)
+let csince = 0, cfleet = "";
+const escH = s => String(s ?? "").replace(/[&<>]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;"}[c]));
+async function conv(){
+  const fl = document.getElementById("fleet").value; if (!fl) return;
+  if (fl !== cfleet) { cfleet = fl; csince = 0; document.getElementById("conv").innerHTML = ""; }
+  try {
+    const d = await api(`/api/office/feed?fleet=${encodeURIComponent(fl)}&since=${csince}`);
+    if (!d.rows.length) return;
+    const box = document.getElementById("conv");
+    box.insertAdjacentHTML("beforeend", d.rows.map(r => {
+      const t = new Date(r.ts).toLocaleTimeString([], {hour:"2-digit", minute:"2-digit"});
+      if (r.kind === "driver_said") return `<div class="m drv"><small>🧑‍✈️ Driver ${escH(r.payload.vehicle)} · ${t}</small><br>${escH(r.payload.text)}</div>`;
+      if (r.to_agent.startsWith("owner")) return `<div class="m own"><small>📲 CEO Agent → you · ${t}</small><br>${escH(r.payload.text)}</div>`;
+      return `<div class="m ag"><small>🤖 Driver Agent → ${escH(r.payload.vehicle)} · ${t}</small><br>${escH(r.payload.text)}</div>`;
+    }).join(""));
+    csince = d.rows[d.rows.length - 1].id; box.scrollTop = 1e9;
+  } catch(_) {}
+}
+document.getElementById("links").href = "/links?k=" + encodeURIComponent(KEY || "");
+refresh(); setInterval(refresh, 15000); setInterval(conv, 2500); setTimeout(conv, 800);
 </script></body></html>

@@ -19,8 +19,8 @@ class Settings:
     driver_bot_token: str = os.getenv("DRIVER_BOT_TOKEN", "")
     owner_bot_token: str = os.getenv("OWNER_BOT_TOKEN", "")
     google_maps_key: str = os.getenv("GOOGLE_MAPS_API_KEY", "")
-    public_base_url: str = os.getenv("PUBLIC_BASE_URL", "http://localhost:8080").rstrip("/")
-    http_port: int = int(os.getenv("HTTP_PORT", "8080"))
+    public_base_url: str = (os.getenv("PUBLIC_BASE_URL") or os.getenv("RENDER_EXTERNAL_URL") or "http://localhost:8080").rstrip("/")
+    http_port: int = int(os.getenv("HTTP_PORT") or os.getenv("PORT") or "8080")  # cloud hosts set PORT
     n8n_webhook_url: str = os.getenv("N8N_WEBHOOK_URL", "")
     api_shared_secret: str = os.getenv("API_SHARED_SECRET", "change_me")
     stt_model: str = os.getenv("STT_MODEL", "prisma-v3.0")

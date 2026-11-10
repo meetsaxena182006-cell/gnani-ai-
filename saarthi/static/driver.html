@@ -7,8 +7,8 @@
 <style>
 :root{--bg:#0b1f20;--fg:#f4f1ea;--accent:#f2a541;--ok:#5cc58a;--bad:#e5484d}
 *{box-sizing:border-box}html,body{margin:0;height:100%;background:var(--bg);color:var(--fg);font-family:system-ui,"Noto Sans Devanagari",sans-serif}
-main{min-height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:20px;padding:16px;text-align:center}
-#orb{width:200px;height:200px;border-radius:50%;background:radial-gradient(circle at 35% 35%,#ffd38a,var(--accent) 55%,#a5641b);
+main{min-height:100%;display:flex;flex-direction:column;align-items:center;justify-content:flex-start;gap:16px;padding:16px;text-align:center}
+#orb{width:150px;height:150px;border-radius:50%;background:radial-gradient(circle at 35% 35%,#ffd38a,var(--accent) 55%,#a5641b);
  box-shadow:0 0 0 0 rgba(242,165,65,.5);transition:transform .2s}
 #orb.talking{animation:pulse 1.2s infinite}#orb.off{filter:grayscale(1) brightness(.5)}
 @keyframes pulse{0%{box-shadow:0 0 0 0 rgba(242,165,65,.55)}70%{box-shadow:0 0 0 40px rgba(242,165,65,0)}100%{box-shadow:0 0 0 0 rgba(242,165,65,0)}}
@@ -16,12 +16,24 @@ button{font-size:1.4rem;padding:18px 32px;border-radius:999px;border:0;backgroun
 #status{font-size:1.1rem;opacity:.85}#card{max-width:520px;width:100%;font-size:1.05rem;line-height:1.5;white-space:pre-wrap;opacity:.9}
 .podbtn{display:inline-block;margin:6px;padding:14px 22px;border-radius:12px;background:var(--accent);color:#1b1206;font-size:1.2rem;font-weight:700}
 #actions a{display:inline-block;margin:6px;padding:14px 22px;border-radius:12px;background:#183a3b;color:var(--fg);text-decoration:none;font-size:1.2rem}
+#who{font-size:.95rem;opacity:.8}#sim{display:none;background:#5a3b0b;border-radius:10px;padding:8px 12px;font-size:.9rem;max-width:520px}
+#chat{width:100%;max-width:560px;display:flex;flex-direction:column;gap:8px;text-align:left;max-height:46vh;overflow:auto;padding:4px}
+.b{padding:10px 12px;border-radius:14px;max-width:88%;line-height:1.4;white-space:pre-wrap;font-size:1.02rem}
+.b.ag{background:#183a3b;align-self:flex-start}.b.me{background:var(--accent);color:#1b1206;align-self:flex-end}
+.b small{display:block;opacity:.6;font-size:.75rem;margin-top:2px}
+#say{display:flex;gap:8px;width:100%;max-width:560px}#say input{flex:1;min-width:0;font-size:1.1rem;padding:14px;border-radius:999px;border:0;background:#183a3b;color:var(--fg)}
+#say button{font-size:1.1rem;padding:12px 20px}.hint{font-size:.85rem;opacity:.6;max-width:520px}
 </style></head>
 <body><main>
+  <div id="who">Saarthi · Driver Agent</div>
+  <div id="sim">🧪 DEMO truck — it drives NH48 by itself (simulated). You play the driver: answer the CEO's questions here.</div>
   <div id="orb" class="off"></div>
   <button id="start">सारथी शुरू करें</button>
   <div id="status">एक बार दबाइए — फिर फ़ोन को छूने की ज़रूरत नहीं।</div>
   <div id="card"></div><div id="actions"></div>
+  <div id="chat"></div>
+  <form id="say"><input id="msg" autocomplete="off" placeholder="Likhiye ya keyboard ka 🎤 dabaiye…"><button>भेजें</button></form>
+  <div class="hint">Baat kariye (Start) ya likhiye — dono se Saarthi sunta hai. Jaise: "bore ho raha hoon", "purane gaane chalao", "aage traffic kaisa hai?", "toll 280 laga".</div>
   <audio id="out" autoplay playsinline></audio>
   <audio id="music" playsinline></audio>
 </main>
@@ -43,7 +55,7 @@ document.addEventListener("visibilitychange", () => { if (document.visibilitySta
 function send(obj){ if (dc && dc.readyState === "open") dc.send(JSON.stringify(obj)); }
 
 function startGps(){
-  if (window.SaarthiAndroid) return;            // the app sends native GPS (works with the screen off)
+  if (window.SaarthiAndroid || simulated) return;  // app sends native GPS; the demo truck follows its simulated route
   if (!navigator.geolocation || geoWatch) return;
   geoWatch = navigator.geolocation.watchPosition(
     p => send({type:"location", lat:p.coords.latitude, lon:p.coords.longitude, speed:p.coords.speed, acc:p.coords.accuracy}),
@@ -133,6 +145,53 @@ function reconnect(){
   status(`नेटवर्क कमज़ोर है — ${Math.round(wait/1000)} सेकंड में फिर जुड़ेगा`);
   reconnectTimer = setTimeout(connect, wait);
 }
+
+// ---- typed chat + inbox (also shows what the CEO Agent asks, and what Saarthi says on the voice call) ----
+let since = 0, simulated = false, webGps, firstPoll = true;
+function esc(s){ return String(s ?? "").replace(/[&<>]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;"}[c])); }
+function bubble(r){
+  const me = r.kind === "driver_said", t = new Date(r.ts).toLocaleTimeString([], {hour:"2-digit", minute:"2-digit"});
+  return `<div class="b ${me ? "me" : "ag"}">${esc(r.payload.text)}<small>${me ? "Aap" : "Saarthi"} · ${t}</small></div>`;
+}
+async function poll(){
+  try {
+    const r = await fetch(`/api/driver/feed?v=${encodeURIComponent(V)}&k=${encodeURIComponent(K)}&since=${since}`);
+    if (!r.ok) return;
+    const d = await r.json();
+    $("who").textContent = `Saarthi · ${d.reg}${d.driver ? " · " + d.driver : ""}`;
+    simulated = d.simulated; $("sim").style.display = simulated ? "block" : "none";
+    if (d.rows.length) {
+      const c = $("chat"); c.insertAdjacentHTML("beforeend", d.rows.map(bubble).join(""));
+      since = d.rows[d.rows.length - 1].id; c.scrollTop = 1e9;
+      const last = d.rows[d.rows.length - 1];
+      // typed-chat replies can carry actions (songs, call buttons); the voice call delivers its own
+      if (!firstPoll && last.kind === "message" && !(dc && dc.readyState === "open") &&
+          ((last.payload.actions || []).length || (last.payload.contacts || []).length))
+        onMessage({type:"display", text: last.payload.text, actions: last.payload.actions || [], contacts: last.payload.contacts || []});
+    }
+    firstPoll = false;
+    if (!simulated) startWebGps();
+  } catch(_) {}
+}
+// live location without the voice call (the voice call sends it over its own channel)
+function startWebGps(){
+  if (webGps || window.SaarthiAndroid || !navigator.geolocation) return;
+  webGps = navigator.geolocation.watchPosition(p => {
+    if (dc && dc.readyState === "open") return;
+    fetch(`/api/location?v=${encodeURIComponent(V)}&k=${encodeURIComponent(K)}`, {method:"POST", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({lat:p.coords.latitude, lon:p.coords.longitude, speed:p.coords.speed, acc:p.coords.accuracy})}).catch(()=>{});
+  }, e => console.warn(e), {enableHighAccuracy:true, maximumAge:15000, timeout:30000});
+}
+$("say").onsubmit = async e => {
+  e.preventDefault(); const text = $("msg").value.trim(); if (!text) return;
+  $("msg").value = ""; $("msg").placeholder = "Saarthi soch raha hai…";
+  $("chat").insertAdjacentHTML("beforeend", `<div class="b me" data-pending>${esc(text)}<small>Aap · bhej rahe hain…</small></div>`); $("chat").scrollTop = 1e9;
+  try { await fetch(`/api/driver/chat?v=${encodeURIComponent(V)}&k=${encodeURIComponent(K)}`, {method:"POST",
+        headers:{"Content-Type":"application/json"}, body: JSON.stringify({text})}); } catch(_) {}
+  document.querySelectorAll("[data-pending]").forEach(x => x.remove());
+  $("msg").placeholder = "Likhiye ya keyboard ka 🎤 dabaiye…"; poll();
+};
+if (V && K) { poll(); setInterval(poll, 2500); }
 
 $("out").onplaying = () => $("orb").classList.add("talking");
 $("out").onpause = () => $("orb").classList.remove("talking");

@@ -1,0 +1,16 @@
+.env
+.venv/
+venv/
+.git/
+__pycache__/
+*.pyc
+.pytest_cache/
+bin/
+data/*.db
+data/review_link.txt
+data/audio/
+data/pod/
+eval/recordings/
+android/
+*.zip
+*.apk

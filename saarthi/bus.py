@@ -39,14 +39,23 @@ class Bus:
         self._sender: Sender | None = None
         self.live: dict[int, "LiveTarget"] = {}  # vehicle_id -> live companion session
         self.sent: list[Out] = []  # kept for tests / simulator
+        self._recorder: Sender | None = None  # e.g. the web inbox: sees every message, however it is delivered
 
     def set_sender(self, sender: Sender) -> None:
         self._sender = sender
+
+    def set_recorder(self, recorder: Sender | None) -> None:
+        self._recorder = recorder
 
     async def send(self, out: Out) -> None:
         self.sent.append(out)
         if len(self.sent) > 500:
             self.sent = self.sent[-200:]
+        if self._recorder is not None:
+            try:
+                await self._recorder(out)
+            except Exception:
+                log.exception("recorder failed")
         live = self.live.get(out.vehicle_id) if out.vehicle_id else None
         if live is not None:
             try:

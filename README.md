@@ -93,6 +93,8 @@ python -m saarthi.main
 3. **Owner:** open `/office` on the laptop (key = `API_SHARED_SECRET`). For Telegram, send `/start OWNER-MEWAR` to the bot.
 4. On mobile data, WebRTC may need a TURN server. Set `ICE_SERVERS` in `.env`.
 
+**One link to review everything, no API keys needed:** double-click `review_demo.bat` (or `python scripts/review_demo.py`). It prints a public `https://…trycloudflare.com/review?k=…` link (also saved in `data/review_link.txt`). Left: the CEO office. Right: what the driver's companion says in the cab and what the owner receives. A synthetic truck drives Udaipur → Ahmedabad on NH48, and you watch the CEO notice each NHAI toll, ask the driver, remind him, then alert the owner (reminder sped up to 2 min for review). Uses its own `data/review_demo.db`; live voice and AI chat still need the keys (`start_public.bat`). The link works while that window stays open.
+
 To review without trucks: `python -m saarthi.demo_story`, then `python -m saarthi.main` and open `/office`. This loads a synthetic day: tolls, detention, an overdue invoice, service due, a challan and a return load.
 To try it without voice, run `python -m saarthi.sim` for a text chat as the driver or owner. To run the tests, use `pytest` (they run offline with a scripted LLM and Pipecat's test harness).
 

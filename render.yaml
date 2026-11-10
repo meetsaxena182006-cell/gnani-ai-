@@ -1,0 +1,35 @@
+# Render Blueprint (free): New > Blueprint > pick this GitHub repo > fill the keys it asks for > Apply.
+# Permanent links: https://<service>.onrender.com/links?k=<API_SHARED_SECRET>  (CEO office + one link per driver)
+# Free plan notes: sleeps after ~15 min with nobody on the site (first open then takes ~1 min); the demo data
+# is rebuilt on every restart, but the links stay the same (LINK_SECRET).
+services:
+  - type: web
+    name: saarthi-fleet
+    runtime: docker
+    plan: free
+    region: singapore          # closest free region to India
+    healthCheckPath: /health
+    envVars:
+      - key: SAARTHI_MODE
+        value: full            # the real agents; "review" = keyless scripted demo
+      - key: SPEECH_MODE
+        value: gnani
+      - key: DEMO_DRIVE
+        value: "1"             # a SIMULATED demo truck (RJ00 DEMO 03) drives NH48 and crosses NHAI tolls
+      - key: SENTINEL_FOLLOWUP_MIN
+        value: "3"             # video speed-up: the CEO re-asks an unanswered toll after 3 min (real use: 30)
+      - key: API_SHARED_SECRET
+        generateValue: true    # the office key; stays the same across deploys
+      - key: LINK_SECRET
+        generateValue: true    # keeps every driver link the same across restarts
+      # ---- secrets: Render asks you for these when you create the Blueprint (never written in this file) ----
+      - key: GNANI_API_KEY     # Gnani Prisma v3.0 (speech-to-text) + Timbre v2.5 (voice)
+        sync: false
+      - key: LLM_API_KEY       # the agents' brain; free Gemini key from https://aistudio.google.com/apikey
+        sync: false
+      - key: CF_TURN_KEY_ID    # Cloudflare TURN: voice connects on mobile data (Render has no UDP)
+        sync: false
+      - key: CF_TURN_API_TOKEN
+        sync: false
+      - key: GOOGLE_MAPS_API_KEY   # optional: live traffic on routes (without it: OSRM routes, no traffic)
+        sync: false

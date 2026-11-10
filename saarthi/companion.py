@@ -236,6 +236,9 @@ class CompanionGuard(_guard_base()):
             await drv.native_event(db.vehicle(self.s.vid), msg)
             return
         if msg.get("type") == "location" and msg.get("lat") is not None:
+            from .demo_drive import is_simulated
+            if is_simulated(self.s.vid):
+                return
             speed = msg.get("speed")  # m/s from the phone's GPS, may be null
             await fatigue.location_update(self.s.vid, float(msg["lat"]), float(msg["lon"]),
                                           speed * 3.6 if isinstance(speed, (int, float)) else None)
@@ -255,7 +258,11 @@ def handler():
 
 
 async def offer(vehicle: dict, body: dict) -> dict | None:
+    from pipecat.transports.smallwebrtc.connection import IceServer
     from pipecat.transports.smallwebrtc.request_handler import SmallWebRTCRequest
+    from . import turn
+    # fresh TURN credentials for the server side of each new call (cached, refreshed before expiry)
+    handler().update_ice_servers([IceServer(**s) for s in await turn.ice_servers()])
 
     async def on_connection(connection):
         old = bus.live.get(vehicle["id"])

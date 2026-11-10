@@ -111,3 +111,18 @@ def test_companion_memory_dedups_and_reaches_prompt(fresh):
     assert len(driver.memories(vid)) == driver.MEMORY_LIMIT
     driver.remember_fact(vid, "Kishore Kumar pasand hai")
     assert "Kishore Kumar" in driver.system_prompt(mw1(), moving=False)
+
+
+async def test_newer_toll_question_does_not_delay_older_escalation(fresh):
+    vid = mw1()["id"]
+    t = db.active_trip(vid)
+    # Paduna: already reminded twice, long ago. Vantada: asked just now for the first time.
+    db.ex("INSERT INTO toll_crossings(vehicle_id,trip_id,plaza,expected_fee,crossed_at,status,asked_at,asks) "
+          "VALUES(?,?,?,?,?,?,?,2)", (vid, t["id"], "Paduna", 400, ago(90), "asked", ago(40)))
+    db.ex("INSERT INTO toll_crossings(vehicle_id,trip_id,plaza,expected_fee,crossed_at,status,asked_at,asks) "
+          "VALUES(?,?,?,?,?,?,?,1)", (vid, t["id"], "Vantada", 120, ago(5), "asked", db.now()))
+    bus.sent.clear()
+    await sentinel.tick()
+    owner = [o.text for o in bus.sent if o.chat_id == 1001]
+    assert any("Paduna" in s and "Vantada" not in s for s in owner)
+    assert not [o for o in bus.sent if o.vehicle_id == vid and "Vantada" in (o.speak or "")]  # its own clock

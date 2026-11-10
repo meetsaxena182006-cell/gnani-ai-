@@ -131,7 +131,8 @@ async def api_offer(req: web.Request) -> web.Response:
 async def api_ice(req: web.Request) -> web.Response:
     if not db.vehicle_by_token(req.query.get("v", ""), req.query.get("k", "")):
         raise web.HTTPUnauthorized()
-    return web.json_response(settings.ice_servers)
+    from . import turn
+    return web.json_response(await turn.ice_servers())
 
 
 async def api_offer_patch(req: web.Request) -> web.Response:
@@ -261,6 +262,9 @@ async def api_location(req: web.Request) -> web.Response:
     if not (-90 <= lat <= 90 and -180 <= lon <= 180):
         return web.json_response({"error": "bad coordinates"}, status=400)
     from . import fatigue
+    from .demo_drive import is_simulated
+    if is_simulated(v["id"]):
+        return web.json_response({"ok": True, "ignored": "demo truck follows the simulated route"})
     speed = b.get("speed")
     await fatigue.location_update(v["id"], lat, lon, float(speed) * 3.6 if isinstance(speed, (int, float)) else None)
     return web.json_response({"ok": True})
@@ -280,8 +284,124 @@ async def api_sentinel(req: web.Request) -> web.Response:
     return web.json_response({"fleet": f["code"], **sentinel.fleet_health(f["id"])})
 
 
+# ---------------- live conversations (web inbox) ----------------
+async def record_message(out) -> None:
+    """Bus recorder: every message to a driver or owner is kept, so the driver page and the office show it
+    (also the lines the live voice companion speaks, and owner alerts when Telegram is not set up)."""
+    v = db.vehicle(out.vehicle_id) if out.vehicle_id else None
+    if v:
+        to = f"driver:{v['code']}"
+    else:
+        f = db.one("SELECT code FROM fleets WHERE owner_chat_id=?", (out.chat_id,)) if out.chat_id else None
+        to = f"owner:{f['code']}" if f else "owner"
+    db.log_agent("system", to, "message", {"text": out.text, "spoken": out.speak, "vehicle": v["code"] if v else None,
+                                           "contacts": out.contacts, "actions": out.actions})
+
+
+def _rows(sql: str, args: tuple) -> list[dict]:
+    rows = db.q(sql, args)
+    for r in rows:
+        r["payload"] = json.loads(r["payload"] or "{}")
+    return rows
+
+
+def ai_ready() -> bool:
+    from . import llm
+    from .config import llm_providers
+    return bool(settings.llm_api_key or llm_providers() or getattr(llm, "_client", None))
+
+
+async def api_driver_chat(req: web.Request) -> web.Response:
+    """The driver types (or uses the keyboard's mic) instead of the live voice call."""
+    v = db.vehicle_by_token(req.query.get("v", ""), req.query.get("k", ""))
+    if not v:
+        raise web.HTTPUnauthorized()
+    text = str((await req.json()).get("text", "")).strip()[:1000]
+    if not text:
+        return web.json_response({"error": "empty"}, status=400)
+    db.log_agent(f"driver:{v['code']}", "driver_agent", "driver_said", {"text": text, "vehicle": v["code"]})
+    if not ai_ready():
+        msg = "AI key set nahi hai (LLM_API_KEY) — server par key daalne ke baad main baat kar paunga."
+        db.log_agent("system", f"driver:{v['code']}", "message", {"text": msg, "vehicle": v["code"]})
+        return web.json_response({"reply": msg})
+    from .agents import driver
+    try:
+        reply = await driver.handle(v, text)   # the reply reaches the page through the inbox (bus recorder)
+    except Exception as e:
+        reply = "Network mein dikkat aayi, ek baar phir boliye."
+        db.log_agent("system", f"driver:{v['code']}", "message", {"text": reply, "vehicle": v["code"], "error": str(e)[:200]})
+    return web.json_response({"reply": reply})
+
+
+async def api_driver_feed(req: web.Request) -> web.Response:
+    v = db.vehicle_by_token(req.query.get("v", ""), req.query.get("k", ""))
+    if not v:
+        raise web.HTTPUnauthorized()
+    from .demo_drive import is_simulated
+    code = v["code"]
+    rows = _rows("SELECT id, ts, from_agent, to_agent, kind, payload FROM agent_log WHERE id>? AND "
+                 "((kind='message' AND to_agent=?) OR (kind='driver_said' AND from_agent=?)) ORDER BY id DESC LIMIT 80",
+                 (int(req.query.get("since", "0") or 0), f"driver:{code}", f"driver:{code}"))
+    return web.json_response({"rows": rows[::-1], "reg": v["reg_label"], "driver": v["driver_name"],
+                              "simulated": is_simulated(v["id"]), "ai": ai_ready()})
+
+
+async def api_office_feed(req: web.Request) -> web.Response:
+    """Owner inbox (what the CEO Agent sends the owner) + every driver conversation in the fleet."""
+    _auth(req)
+    f = db.one("SELECT * FROM fleets WHERE upper(code)=upper(?)", (req.query.get("fleet", ""),)) or db.one("SELECT * FROM fleets")
+    codes = [x["code"] for x in db.q("SELECT code FROM vehicles WHERE fleet_id=?", (f["id"],))]
+    targets = [f"owner:{f['code']}", "owner"] + [f"driver:{c}" for c in codes]
+    ph = ",".join("?" * len(targets))
+    rows = _rows(f"SELECT id, ts, from_agent, to_agent, kind, payload FROM agent_log WHERE id>? AND "
+                 f"((kind='message' AND to_agent IN ({ph})) OR (kind='driver_said' AND from_agent IN ({ph}))) "
+                 f"ORDER BY id DESC LIMIT 150",
+                 (int(req.query.get("since", "0") or 0), *targets, *targets))
+    return web.json_response({"rows": rows[::-1], "ai": ai_ready()})
+
+
+LINKS_HTML = """<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Saarthi links</title><style>body{font:16px/1.5 system-ui,sans-serif;margin:0;padding:16px;background:#f6f4ef;color:#1d2321}
+@media (prefers-color-scheme:dark){body{background:#121615;color:#ece9e2}a{color:#6fd3c0}}
+.c{max-width:760px;margin:auto}.box{border:1px solid #8884;border-radius:12px;padding:12px 14px;margin:10px 0}
+a{word-break:break-all;color:#0f6b5c}small{opacity:.75}button{font:inherit;padding:4px 10px;border-radius:8px;border:1px solid #8886;background:none;color:inherit;cursor:pointer}
+</style></head><body><div class="c"><h2>Saarthi — permanent links</h2>__STATUS____BODY__
+<p><small>Demo fleets and trucks are synthetic. Keep these links private: anyone with a link can use that screen.</small></p></div>
+<script>document.querySelectorAll("button[data-u]").forEach(b=>b.onclick=()=>{navigator.clipboard.writeText(b.dataset.u);b.textContent="Copied"});</script></body></html>"""
+
+
+async def links_page(req: web.Request) -> web.Response:
+    if req.query.get("k") != settings.api_shared_secret or settings.api_shared_secret == "change_me":
+        raise web.HTTPUnauthorized(text="open /links?k=<office key>")
+    from . import turn
+    from .demo_drive import is_simulated
+    base, k = settings.public_base_url, settings.api_shared_secret
+
+    def row(title: str, url: str, note: str = "") -> str:
+        u = html.escape(url)
+        return (f'<div class="box"><b>{html.escape(title)}</b> <button data-u="{u}">Copy</button><br>'
+                f'<a href="{u}" target="_blank">{u}</a>{"<br><small>" + html.escape(note) + "</small>" if note else ""}</div>')
+
+    def st(ok: bool, label: str) -> str:
+        return f"<span>{'✅' if ok else '❌'} {label}</span> &nbsp; "
+
+    status = ("<p>" + st(ai_ready(), "AI brain (LLM key)") + st(bool(settings.gnani_api_key), "Gnani voice (STT + TTS)")
+              + st(turn.configured(), "Cloudflare TURN (voice on mobile data)") + "</p>")
+    body = "<h3>🏢 CEO Agent — owner's office</h3>" + row("Office (CEO Agent)", f"{base}/office?k={k}",
+                                                            "Live map, Sentinel checklist, chat with the CEO Agent, every driver conversation.")
+    for f in db.q("SELECT * FROM fleets ORDER BY id"):
+        body += f"<h3>🚚 Driver Agents — {html.escape(f['name'])}</h3>"
+        for v in db.q("SELECT * FROM vehicles WHERE fleet_id=? ORDER BY code", (f["id"],)):
+            note = ("SIMULATED demo truck driving NH48 — open it to play the driver and answer the CEO's toll questions."
+                    if is_simulated(v["id"]) else "Real phone GPS + voice. Give this to the test driver.")
+            body += row(f"{v['reg_label']} ({v['code']})" + (f" · {v['driver_name']}" if v.get("driver_name") else ""),
+                        f"{base}/driver?v={v['code']}&k={v['access_token']}", note)
+    return web.Response(text=LINKS_HTML.replace("__STATUS__", status).replace("__BODY__", body), content_type="text/html")
+
+
 async def health(req: web.Request) -> web.Response:
-    return web.json_response({"ok": True, "live_companions": len(bus.live)})
+    return web.json_response({"ok": True, "live_companions": len(bus.live), "ai": ai_ready(),
+                              "voice": bool(settings.gnani_api_key) or settings.speech_mode != "gnani"})
 
 
 def build_app() -> web.Application:
@@ -308,6 +428,10 @@ def build_app() -> web.Application:
         web.get("/api/business", api_business),
         web.get("/api/sentinel", api_sentinel),
         web.get("/api/plan/fleet", api_plan_fleet),
+        web.post("/api/driver/chat", api_driver_chat),
+        web.get("/api/driver/feed", api_driver_feed),
+        web.get("/api/office/feed", api_office_feed),
+        web.get("/links", links_page),
         web.static("/static", STATIC),
     ])
     return app

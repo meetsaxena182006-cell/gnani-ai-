@@ -6,6 +6,9 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
+import hmac
+import base64
 import os
 import secrets
 from urllib.parse import quote
@@ -22,6 +25,15 @@ FLEETS = [
 ]
 
 
+def access_token(code: str) -> str:
+    """Same link every time when LINK_SECRET is set (the free cloud disk is wiped on every restart)."""
+    secret = os.getenv("LINK_SECRET", "")
+    if not secret:
+        return secrets.token_urlsafe(9)
+    mac = hmac.new(secret.encode(), code.encode(), hashlib.sha256).digest()
+    return base64.urlsafe_b64encode(mac).decode()[:12]
+
+
 def seed(demo: bool = False) -> None:
     if settings.db_path != ":memory:" and os.path.exists(settings.db_path):
         os.remove(settings.db_path)
@@ -31,7 +43,7 @@ def seed(demo: bool = False) -> None:
         fid = db.ex("INSERT INTO fleets(code,name,diesel_price) VALUES(?,?,?)", (fl["code"], fl["name"], fl["diesel"]))
         for i, (code, reg, vtype) in enumerate(fl["vehicles"]):
             vid = db.ex("INSERT INTO vehicles(fleet_id,code,reg_label,vtype,access_token) VALUES(?,?,?,?,?)",
-                        (fid, code, reg, vtype, secrets.token_urlsafe(9)))
+                        (fid, code, reg, vtype, access_token(code)))
             docs = {"Insurance": 200 - 60 * i, "National Permit": 120, "Fitness": 45 - 20 * i, "PUC": 25 - 20 * i,
                     "Driver Licence": 600}
             for dt, days in docs.items():
