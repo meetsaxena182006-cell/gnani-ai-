@@ -27,7 +27,12 @@ _audio: dict[int, bytes] = {}
 
 # role -> Gnani Timbre voices to try (first that works wins)
 VOICE_TRY = {"saarthi": ["Poorvi", "Suhana", "Veera"], "driver": ["Zayan", "Ishaan", "Kavin", "Riyaan", "Pranav"],
-             "ceo": ["Pranav", "Dhruva"], "owner": ["Riyaan", "Kavin", "Dhruva", "Ishaan"]}
+             "ceo": ["Pranav", "Dhruva"], "owner": ["Riyaan", "Kavin", "Dhruva", "Ishaan"],
+             "helper": ["Kavin", "Ishaan", "Dhruva"], "saarthi_te": ["Suhana", "Poorvi"]}
+LANG = {"saarthi_te": "te-IN"}
+# regional language moment (driver switches Saarthi's language with the picker on the phone)
+TELUGU = (12, "తెలంగాణకు స్వాగతం రమేష్ భాయ్! మీరు భాష మార్చారు — ఇప్పటినుంచి నేను తెలుగులో మాట్లాడతాను. "
+              "హైదరాబాద్ దగ్గరలోనే ఉంది, నెమ్మదిగా, జాగ్రత్తగా నడపండి. నేను మీతోనే ఉన్నాను.")
 _voice_ok: dict[str, str] = {}
 
 # real questions put to the real agents during capture: (after step index, who, text)
@@ -122,6 +127,10 @@ async def _capture() -> list[dict]:
                 log.exception("film step failed")
                 events.append(_stamp({"kind": "note", "text": f"⚠️ step failed: {e}"}))
             S["step"] = i
+            if TELUGU[0] == i:
+                events.append(_stamp({"kind": "note", "text": "Language picker on the driver's phone: 10 Indian languages — "
+                                                              "the same Saarthi now speaks Telugu (Gnani Timbre, te-IN)", "step": i}))
+                events.append(_stamp({"kind": "saarthi", "text": TELUGU[1], "speak": TELUGU[1], "lang": "te-IN", "step": i}))
             for after, who, q in ASK:
                 if after != i:
                     continue
@@ -158,12 +167,18 @@ def _tts(text: str, role: str) -> bytes:
     err = None
     for voice in tries:
         try:
-            b = c.synthesize(text, voice=voice, model=settings.tts_model, language="hi-IN", audio_config=cfg)
+            b = c.synthesize(text, voice=voice, model=settings.tts_model, language=LANG.get(role, "hi-IN"), audio_config=cfg)
             _voice_ok[role] = voice
             return b
         except Exception as e:
             err = e
     raise RuntimeError(f"TTS failed for {role}: {err}")
+
+
+def _role(ev: dict) -> str:
+    if ev.get("lang") == "te-IN":
+        return "saarthi_te"
+    return ev["kind"] if ev["kind"] in VOICE_TRY else "saarthi"
 
 
 async def _voice(events: list[dict]) -> None:
@@ -176,7 +191,7 @@ async def _voice(events: list[dict]) -> None:
         ev["audio"] = []
         for part in _chunks(_clean(ev["speak"])):
             try:
-                b = await asyncio.to_thread(_tts, part, ev["kind"] if ev["kind"] in VOICE_TRY else "saarthi")
+                b = await asyncio.to_thread(_tts, part, _role(ev))
             except Exception as e:
                 log.warning("film TTS: %s", e)
                 continue
@@ -185,7 +200,7 @@ async def _voice(events: list[dict]) -> None:
                 fh.write(b)
             ev["audio"].append(n)
             n += 1
-        ev["voice"] = _voice_ok.get(ev["kind"] if ev["kind"] in VOICE_TRY else "saarthi")
+        ev["voice"] = _voice_ok.get(_role(ev))
 
 
 async def _prepare() -> None:

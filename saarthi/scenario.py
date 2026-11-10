@@ -400,6 +400,9 @@ async def s_mesh_help():
     if rid:
         reply = await mesh.respond(db.vehicle_by_code(HELPER), rid, True)
         db.log_agent(f"driver:{HELPER}", "mesh", "helper_reply", {"text": reply})
+        if S.get("film") is not None and reply:   # film: the other fleet's agent speaks for itself
+            S["film"].append({"kind": "helper", "text": reply, "speak": reply, "step": S["step"] + 1,
+                              "km": round(S["km"], 1)})
     await driver_say("अच्छी ख़बर! श्री गणेश ट्रांसपोर्ट का ट्रक, सुरेश भाई, चार किलोमीटर पे है — उनके पास जैक और "
                      "स्टेपनी खोलने का औज़ार है, आ रहे हैं। और Akola Demo Tyre Works का मिस्त्री भी नया टायर लेकर निकल गया है, "
                      "पच्चीस मिनट में पहुँचेगा। तब तक पीछे तिकोना लगा दीजिए।",

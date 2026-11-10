@@ -5,6 +5,25 @@
 
 75% of Indian truck operators own fewer than 5 trucks. They run on phone calls, paper diaries and guesswork, and can't afford GPS hardware or fleet software. Saarthi gives every truck a **live voice companion**: the phone sits in a holder on the dashboard, and the driver just talks, never touching it. The office gets a **CEO Agent** that oversees all the trucks and keeps the owner updated.
 
+## Try it
+
+| What | Link |
+|---|---|
+| 🎬 **Film mode**: the full simulated Udaipur → Hyderabad trip, auto-played with Gnani voices | https://saarthi-fleet.onrender.com/film |
+| 🏢 Owner's office (CEO Agent, live map, demo trip panel, CEO voice call) | `https://saarthi-fleet.onrender.com/office?k=<office key>` (key shared with the submission) |
+| 🚚 Driver companion (live voice, Hindi + 9 more languages) | from `https://saarthi-fleet.onrender.com/links?k=<office key>` |
+| 💻 Code | https://github.com/meetsaxena182006-cell/gnani-ai- |
+
+Hosted on Render's free plan (Singapore): the first visit after it has been idle takes ~1 minute to wake up, and live voice
+is slower there than on a laptop. Film mode is pre-voiced, so it plays smoothly anywhere. If the server restarted, the film page
+shows "Prepare film again" (office key, ~4 min). **Everything in the demo trip is simulated demo data.**
+
+**Film mode covers:** trip assignment by the CEO Agent, route plan (NHAI toll plazas, diesel, rest stops, ETA), live location
+on the map, FASTag toll auto-logging, fuel stop + diesel reported by voice (live AI confirms and saves it), traffic jam re-route,
+heavy-rain warning, fatigue rest at a dhaba, tyre burst → breakdown flow → agent-to-agent help from another fleet's truck,
+repair cost logging, papers / PUC renewal before a border check, client ETA call + return load offer, language switch to
+Telugu, delivery + POD + trip P&L, and the owner asking the CEO Agent for profit (live AI answer).
+
 ## What it does
 
 **Driver Agent: a companion that lives on the driver's phone (always on, hands-free)**

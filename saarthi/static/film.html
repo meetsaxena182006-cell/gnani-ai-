@@ -19,6 +19,7 @@ main{display:grid;grid-template-columns:380px 1fr 420px;gap:16px;padding:16px;mi
 .chat{flex:1;overflow:hidden;padding:10px;display:flex;flex-direction:column;justify-content:flex-end;gap:8px}
 .b{max-width:88%;padding:8px 11px;border-radius:14px;font-size:14.5px;animation:pop .25s ease-out}
 .b.sa{background:#2a1d08;border:1px solid #6b4a12;align-self:flex-start}.b.dr{background:#0b2c2a;border:1px solid #1e6b64;align-self:flex-end}
+.b.hp{background:#1d2a12;border:1px solid #4d7a22;align-self:flex-start}.b.hp .who{color:#9be15d}
 .b.ceo{background:#161c46;border:1px solid #39459a;align-self:flex-start}.b.ow{background:#3a1430;border:1px solid #8a2e6c;align-self:flex-end}
 .b .who{font-size:11px;font-weight:700;letter-spacing:.4px;text-transform:uppercase;margin-bottom:3px;display:flex;gap:6px;align-items:center}
 .b.sa .who{color:var(--sa)}.b.dr .who{color:var(--dr)}.b.ceo .who{color:var(--ceo)}.b.ow .who{color:var(--ow)}
@@ -129,14 +130,14 @@ function money(m){ if (!m) return;
   $("m_re").textContent = inr(m.repair); $("m_sp").textContent = inr(m.spent); $("m_pr").textContent = inr(m.profit);
   $("s_toll").textContent = `${m.toll_count || 0} · ${inr(m.toll)}`;
 }
-const WHO = {saarthi:["sa","Saarthi (AI co-driver)"], driver:["dr","Ramesh · driver (demo)"], ceo:["ceo","CEO Agent (AI)"], owner:["ow","Owner (demo)"]};
+const WHO = {helper:["hp","SG-T1 Saarthi → its driver Suresh (other fleet)"], saarthi:["sa","Saarthi (AI co-driver)"], driver:["dr","Ramesh · driver (demo)"], ceo:["ceo","CEO Agent (AI)"], owner:["ow","Owner (demo)"]};
 function bubble(ev){
   const [cls, name] = WHO[ev.kind], box = (ev.kind === "ceo" || ev.kind === "owner") ? $("ochat") : $("pchat");
   const d = document.createElement("div"); d.className = "b " + cls;
   const isCeo = ev.kind === "ceo" && !ev.live;
   const card = !isCeo && ev.speak && ev.text && ev.text !== ev.speak ? ev.text : null;
   const body = isCeo ? ev.text : (ev.speak || ev.text);
-  d.innerHTML = `<div class="who">${name} ${ev.live ? '<span class="live">LIVE AI</span>' : ""} <span class="wave" style="display:none"><i></i><i></i><i></i></span></div>`
+  d.innerHTML = `<div class="who">${name} ${ev.live ? '<span class="live">LIVE AI</span>' : ""} ${ev.lang === "te-IN" ? '<span class="live" style="background:#ffd166">తెలుగు</span>' : ""} <span class="wave" style="display:none"><i></i><i></i><i></i></span></div>`
     + (card ? `<span class="chip"></span>` : "") + `<div class="tx"></div>`;
   if (card) d.querySelector(".chip").textContent = card;
   d.querySelector(".tx").textContent = body;
