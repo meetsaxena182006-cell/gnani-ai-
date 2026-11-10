@@ -33,7 +33,7 @@ _voice_ok: dict[str, str] = {}
 # real questions put to the real agents during capture: (after step index, who, text)
 ASK = [(3, "driver", "हाँ सारथी, डीज़ल भरवा लिया — 235 लीटर, 21620 रुपये।"),
        (3, "driver", "हाँ, सही है।"),
-       (13, "owner", "इस ट्रिप में कुल कितना ख़र्चा हुआ और कितना बचा?")]
+       (13, "owner", "MW-T1 के इस हैदराबाद ट्रिप में कुल कितना ख़र्चा हुआ और कितना बचा?")]
 
 FAIL_TEXT = "samajh nahi paaya"
 
