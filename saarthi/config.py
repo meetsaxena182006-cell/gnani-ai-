@@ -6,19 +6,25 @@ from dotenv import load_dotenv
 load_dotenv()
 
 
+def _secret(name: str) -> str:
+    """A key from the environment; placeholders copied from .env.example count as not set."""
+    v = (os.getenv(name) or "").strip()
+    return "" if (not v or v.startswith("your_") or v == "telegram_token_from_botfather") else v
+
+
 def _list(name: str, default: str) -> list[str]:
     return [x.strip() for x in os.getenv(name, default).split(",") if x.strip()]
 
 
 @dataclass
 class Settings:
-    gnani_api_key: str = os.getenv("GNANI_API_KEY", "")
-    llm_api_key: str = os.getenv("LLM_API_KEY", "")
+    gnani_api_key: str = _secret("GNANI_API_KEY")
+    llm_api_key: str = _secret("LLM_API_KEY")
     llm_base_url: str = os.getenv("LLM_BASE_URL", "https://generativelanguage.googleapis.com/v1beta/openai/")
     llm_model: str = os.getenv("LLM_MODEL", "gemini-2.5-flash")
-    driver_bot_token: str = os.getenv("DRIVER_BOT_TOKEN", "")
-    owner_bot_token: str = os.getenv("OWNER_BOT_TOKEN", "")
-    google_maps_key: str = os.getenv("GOOGLE_MAPS_API_KEY", "")
+    driver_bot_token: str = _secret("DRIVER_BOT_TOKEN")
+    owner_bot_token: str = _secret("OWNER_BOT_TOKEN")
+    google_maps_key: str = _secret("GOOGLE_MAPS_API_KEY")
     public_base_url: str = (os.getenv("PUBLIC_BASE_URL") or os.getenv("RENDER_EXTERNAL_URL") or "http://localhost:8080").rstrip("/")
     http_port: int = int(os.getenv("HTTP_PORT") or os.getenv("PORT") or "8080")  # cloud hosts set PORT
     n8n_webhook_url: str = os.getenv("N8N_WEBHOOK_URL", "")
@@ -45,7 +51,7 @@ def llm_providers() -> list[dict]:
     E.g. primary: Gnani-provided LLM endpoint or self-hosted Evon (vLLM); fallback: Gemini/Groq."""
     out = []
     for prefix in ("LLM", "LLM2", "LLM3"):
-        key, url, model = os.getenv(f"{prefix}_API_KEY"), os.getenv(f"{prefix}_BASE_URL"), os.getenv(f"{prefix}_MODEL")
+        key, url, model = _secret(f"{prefix}_API_KEY"), os.getenv(f"{prefix}_BASE_URL"), os.getenv(f"{prefix}_MODEL")
         if key and url and model:
             out.append({"name": os.getenv(f"{prefix}_NAME", prefix.lower()), "api_key": key, "base_url": url, "model": model})
     return out

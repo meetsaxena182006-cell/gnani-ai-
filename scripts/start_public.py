@@ -30,22 +30,24 @@ def step(msg: str) -> None:
     print(f"\n=== {msg}")
 
 
-def ensure_env() -> None:
+def ensure_env() -> list[str]:
+    """Creates .env if needed, sets a permanent office key + link secret. Returns the keys still missing."""
+    import secrets
     env = ROOT / ".env"
     if not env.exists():
         shutil.copy(ROOT / ".env.example", env)
-        print("Created .env from .env.example. Open it, add GNANI_API_KEY, LLM_API_KEY (and DRIVER_BOT_TOKEN), then run again.")
-        sys.exit(1)
+        print("Created .env from .env.example.")
     text = env.read_text(encoding="utf-8")
-    missing = [k for k in ("GNANI_API_KEY", "LLM_API_KEY") if re.search(rf"^{k}=(your_|\s*$)", text, re.M)]
-    if missing:
-        print(f"Please fill {', '.join(missing)} in .env first.")
-        sys.exit(1)
-    if re.search(r"^API_SHARED_SECRET=change_me", text, re.M):
-        import secrets
-        key = secrets.token_urlsafe(8)
-        env.write_text(re.sub(r"^API_SHARED_SECRET=change_me", f"API_SHARED_SECRET={key}", text, flags=re.M), encoding="utf-8")
-        print(f"Set a random office key in .env: {key}")
+    if re.search(r"^API_SHARED_SECRET=(change_me)?\s*$", text, re.M):
+        text = re.sub(r"^API_SHARED_SECRET=.*$", f"API_SHARED_SECRET={secrets.token_urlsafe(8)}", text, flags=re.M)
+    elif not re.search(r"^API_SHARED_SECRET=", text, re.M):
+        text += f"\nAPI_SHARED_SECRET={secrets.token_urlsafe(8)}\n"
+    if not re.search(r"^LINK_SECRET=\S", text, re.M):   # keeps every driver link the same between restarts
+        text = re.sub(r"^LINK_SECRET=.*\n?", "", text, flags=re.M).rstrip("\n") + f"\nLINK_SECRET={secrets.token_urlsafe(12)}\n"
+    env.write_text(text, encoding="utf-8")
+    missing = [k for k in ("GNANI_API_KEY", "LLM_API_KEY", "CF_TURN_KEY_ID", "CF_TURN_API_TOKEN")
+               if not re.search(rf"^{k}=(?!your_)\S+", text, re.M)]
+    return missing
 
 
 def cloudflared() -> str:
@@ -100,39 +102,50 @@ def qr(text: str) -> None:
 def main() -> None:
     os.chdir(ROOT)
     step("Checking settings")
-    ensure_env()
+    missing = ensure_env()
     step("Installing Python packages (first run takes a few minutes)")
-    subprocess.check_call([sys.executable, "-m", "pip", "install", "-q", "-r", "requirements.txt", "qrcode"])
+    subprocess.check_call([sys.executable, "-m", "pip", "install", "-q", "--disable-pip-version-check",
+                           "-r", "requirements.txt", "qrcode"])
     step("Opening a public HTTPS link (Cloudflare quick tunnel)")
     tunnel, url = open_tunnel(cloudflared())
     os.environ["PUBLIC_BASE_URL"] = url
     from dotenv import load_dotenv
     load_dotenv(ROOT / ".env")
     os.environ["PUBLIC_BASE_URL"] = url
+    os.environ.setdefault("DEMO_DRIVE", "1")              # SIMULATED demo truck drives NH48 for the video
+    os.environ.setdefault("SENTINEL_FOLLOWUP_MIN", "3")   # video speed-up (real use: 30)
+    os.environ["PYTHONIOENCODING"] = "utf-8"
     db_path = os.getenv("DB_PATH", "data/saarthi.db")
-    if not Path(db_path).exists():
-        step("Creating demo fleets (synthetic)")
-        subprocess.check_call([sys.executable, "-m", "saarthi.seed", "--demo"], env=os.environ)
+    step("Creating a fresh demo day (synthetic fleets)")
+    if Path(db_path).exists():
+        Path(db_path).unlink()
+    subprocess.check_call([sys.executable, "-m", "saarthi.seed", "--demo"], env=os.environ,
+                          stdout=subprocess.DEVNULL)
     import sqlite3
     con = sqlite3.connect(db_path)
-    step("LINKS — share these")
-    print(f"\nOWNER / OFFICE (laptop browser):  {url}/office")
-    print(f"   office key: {os.getenv('API_SHARED_SECRET')}")
+    key = os.getenv("API_SHARED_SECRET")
+    lines = [f"CEO AGENT (owner's office):  {url}/office?k={key}", f"ALL LINKS PAGE:              {url}/links?k={key}", ""]
     for code, reg, token in con.execute("SELECT code, reg_label, access_token FROM vehicles ORDER BY code"):
-        link = f"{url}/driver?v={code}&k={token}"
-        print(f"\nDRIVER {reg} ({code})")
-        print(f"   phone browser: {link}")
-        print(f"   Android app setup: saarthi://setup?url={quote(link, safe='')}")
-    first = con.execute("SELECT code, access_token FROM vehicles ORDER BY code LIMIT 1").fetchone()
-    if first:
-        print("\nScan with the first driver's phone:")
-        qr(f"{url}/driver?v={first[0]}&k={first[1]}")
-    for fcode, in con.execute("SELECT code FROM fleets"):
-        print(f"Telegram (owner): send  /start OWNER-{fcode}  to your bot")
+        tag = "  <- SIMULATED demo truck (you play the driver)" if code == "MW-T3" else ""
+        lines.append(f"DRIVER AGENT {reg} ({code}): {url}/driver?v={code}&k={token}{tag}")
     con.close()
+    (ROOT / "data").mkdir(exist_ok=True)
+    (ROOT / "data" / "live_links.txt").write_text("\n".join(lines) + "\n", encoding="utf-8")
+    step("LIVE LINKS (also saved in data\\live_links.txt)")
+    print("\n".join(lines))
+    print("\nGive the test driver the MW-T1 link (his phone GPS moves that truck on the CEO map).")
+    if missing:
+        print(f"\n!! Not set in .env yet: {', '.join(missing)}")
+        print("   Pages work now; live voice needs GNANI_API_KEY + LLM_API_KEY, mobile data needs the CF_TURN pair.")
+    print("\nKeep this window open. Closing it stops the links. The address changes on every restart.")
+    try:
+        import webbrowser
+        webbrowser.open(f"{url}/links?k={key}")
+    except Exception:
+        pass
     step("Starting Saarthi (Ctrl+C to stop)")
     try:
-        subprocess.call([sys.executable, "-m", "saarthi.main"], env=os.environ)
+        subprocess.call([sys.executable, "-m", "saarthi.main", "--allow-missing-keys"], env=os.environ)
     finally:
         tunnel.terminate()
 
