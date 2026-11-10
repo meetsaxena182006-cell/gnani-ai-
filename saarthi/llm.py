@@ -45,7 +45,8 @@ def providers() -> list[tuple[object, str, str]]:
         from .config import llm_providers
         cfg = llm_providers() or [{"name": "default", "api_key": settings.llm_api_key or "missing",
                                    "base_url": settings.llm_base_url, "model": settings.llm_model}]
-        _providers = [(AsyncOpenAI(api_key=p["api_key"], base_url=p["base_url"], timeout=30), p["model"], p["name"])
+        _providers = [(AsyncOpenAI(api_key=p["api_key"], base_url=p["base_url"], timeout=30, max_retries=1),
+                       p["model"], p["name"])
                       for p in cfg]
     return _providers
 
@@ -105,6 +106,17 @@ class Memory:
         self._m[key].append({"role": role, "content": content})
 
 
+def _call_dict(c) -> dict:
+    """Tool call to send back next turn. Gemini 3 needs its `extra_content` (thought signature) returned as-is."""
+    d = {"id": c.id, "type": "function", "function": {"name": c.function.name, "arguments": c.function.arguments}}
+    extra = getattr(c, "extra_content", None)
+    if extra is None and hasattr(c, "model_extra"):
+        extra = (c.model_extra or {}).get("extra_content")
+    if extra:
+        d["extra_content"] = extra
+    return d
+
+
 async def run_agent(system: str, history: list[dict], user_text: str, tools: list[Tool],
                     max_steps: int = 6, agent_name: str = "agent") -> str:
     by_name = {t.name: t for t in tools}
@@ -116,12 +128,7 @@ async def run_agent(system: str, history: list[dict], user_text: str, tools: lis
         calls = getattr(msg, "tool_calls", None) or []
         if not calls:
             return (msg.content or "").strip()
-        messages.append({
-            "role": "assistant", "content": msg.content or "",
-            "tool_calls": [{"id": c.id, "type": "function",
-                            "function": {"name": c.function.name, "arguments": c.function.arguments}}
-                           for c in calls],
-        })
+        messages.append({"role": "assistant", "content": msg.content or "", "tool_calls": [_call_dict(c) for c in calls]})
         for c in calls:
             tool = by_name.get(c.function.name)
             try:

@@ -147,8 +147,7 @@ class LiveSession(LiveTarget):
             from .config import llm_providers
             cfg = llm_providers() or [{"api_key": settings.llm_api_key, "base_url": settings.llm_base_url,
                                        "model": settings.llm_model}]
-            llms = [OpenAILLMService(api_key=p["api_key"], base_url=p["base_url"],
-                                     settings=OpenAILLMService.Settings(model=p["model"])) for p in cfg]
+            llms = [_voice_llm(p) for p in cfg]
             if len(llms) == 1:
                 llm = llms[0]
             else:
@@ -188,6 +187,16 @@ class LiveSession(LiveTarget):
             finally:
                 if bus.live.get(self.vid) is self:
                     bus.live.pop(self.vid, None)
+
+
+def _voice_llm(p: dict):
+    """Gemini through Pipecat's native Google service (multi-step tool calls need Gemini's thought signatures);
+    any other OpenAI-compatible provider (Groq, vLLM...) through the OpenAI service."""
+    if "generativelanguage.googleapis.com" in p["base_url"]:
+        from pipecat.services.google.llm import GoogleLLMService
+        return GoogleLLMService(api_key=p["api_key"], settings=GoogleLLMService.Settings(model=p["model"]))
+    from pipecat.services.openai.llm import OpenAILLMService
+    return OpenAILLMService(api_key=p["api_key"], base_url=p["base_url"], settings=OpenAILLMService.Settings(model=p["model"]))
 
 
 def _guard_base():

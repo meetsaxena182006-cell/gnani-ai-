@@ -1,6 +1,6 @@
 gnani-vachana==0.9.0
 pipecat-gnani==0.6.0
-pipecat-ai[webrtc,silero,openai]>=1.15,<2
+pipecat-ai[webrtc,silero,openai,google]>=1.15,<2
 openai>=1.40
 python-telegram-bot[job-queue]>=21,<23
 aiohttp>=3.9
