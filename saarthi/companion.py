@@ -17,6 +17,7 @@ Phone (mic+speaker, locked on the dashboard)  <-- WebRTC -->  this pipeline:
 """
 from __future__ import annotations
 
+import os
 import asyncio
 import logging
 import re
@@ -147,7 +148,11 @@ class LiveSession(LiveTarget):
             from .config import llm_providers
             cfg = llm_providers() or [{"api_key": settings.llm_api_key, "base_url": settings.llm_base_url,
                                        "model": settings.llm_model}]
-            llms = [_voice_llm(p) for p in cfg]
+            # Voice can't wait: a busy model (Gemini 503) loses that whole turn. Fast providers (Groq) answer
+            # first when configured; Gemini models stay as backups. VOICE_LLM_FIRST=gemini keeps Gemini first.
+            if os.getenv("VOICE_LLM_FIRST", "fast") != "gemini":
+                cfg = sorted(cfg, key=lambda p: "generativelanguage.googleapis.com" in p["base_url"])
+            llms = [_voice_llm(p) for p in cfg[:4]]
             if len(llms) == 1:
                 llm = llms[0]
             else:
