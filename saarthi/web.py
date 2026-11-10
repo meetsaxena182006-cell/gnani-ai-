@@ -1,6 +1,7 @@
 """HTTP server: client tracking page (no GPS hardware) + small API for n8n workflows."""
 from __future__ import annotations
 
+import asyncio
 import html
 import json
 from pathlib import Path
@@ -124,7 +125,11 @@ async def api_offer(req: web.Request) -> web.Response:
     if not v:
         raise web.HTTPUnauthorized(text="unknown vehicle or wrong key")
     from . import companion
-    answer = await companion.offer(v, await req.json())
+    body = await req.json()
+    if body.get("lang") in companion.VOICES:  # the driver's fixed language, chosen on the phone
+        db.ex("UPDATE vehicles SET lang=? WHERE id=?", (body["lang"], v["id"]))
+        v = db.vehicle(v["id"])
+    answer = await companion.offer(v, body)
     return web.json_response(answer)
 
 
@@ -147,6 +152,25 @@ async def api_owner_offer(req: web.Request) -> web.Response:
     _auth(req)
     from . import owner_voice
     return web.json_response(await owner_voice.offer(_fleet_from(req), await req.json()))
+
+
+async def api_demo_trip(req: web.Request) -> web.Response:
+    """Office 'Demo trip' panel: a SIMULATED Udaipur -> Hyderabad trip that exercises every feature (scenario.py)."""
+    _auth(req)
+    from . import scenario
+    if req.method == "POST":
+        body = await req.json()
+        action = body.get("action")
+        if action == "start":
+            scenario.S.update(auto=False)
+            asyncio.create_task(scenario.restart())
+        elif action == "next":
+            asyncio.create_task(scenario.next_step())
+        elif action == "auto":
+            scenario.start_auto(float(body.get("gap") or 30))
+        elif action == "stop":
+            scenario.stop_auto()
+    return web.json_response(scenario.state())
 
 
 async def api_owner_ice(req: web.Request) -> web.Response:
@@ -369,7 +393,9 @@ async def api_driver_feed(req: web.Request) -> web.Response:
                  "((kind='message' AND to_agent=?) OR (kind='driver_said' AND from_agent=?)) ORDER BY id DESC LIMIT 80",
                  (int(req.query.get("since", "0") or 0), f"driver:{code}", f"driver:{code}"))
     return web.json_response({"rows": rows[::-1], "reg": v["reg_label"], "driver": v["driver_name"],
-                              "simulated": is_simulated(v["id"]), "ai": ai_ready()})
+                              "simulated": is_simulated(v["id"]), "ai": ai_ready(),
+                              "pos": [v["last_lat"], v["last_lon"]] if v.get("last_lat") is not None else None,
+                              "speed": round(v["last_speed_kmph"] or 0)})
 
 
 async def api_office_feed(req: web.Request) -> web.Response:
@@ -449,6 +475,8 @@ def build_app() -> web.Application:
         web.post("/api/owner/offer", api_owner_offer),
         web.patch("/api/owner/offer", api_offer_patch),
         web.get("/api/owner/ice", api_owner_ice),
+        web.get("/api/demo/trip", api_demo_trip),
+        web.post("/api/demo/trip", api_demo_trip),
         web.get("/api/fleet", api_fleet),
         web.post("/api/ceo/chat", api_ceo_chat),
         web.post("/api/fastag/statement", api_fastag_statement),

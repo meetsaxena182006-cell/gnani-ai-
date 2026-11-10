@@ -39,12 +39,15 @@ CONVERSATION_OPEN_S = 90
 # "always" (default): answer everything the driver says (driver alone in the cab). "wake": only when addressed /
 # in an open conversation / emergency (use when passengers talk a lot).
 ADDRESS_MODE = os.getenv("COMPANION_ADDRESS_MODE", "always")
-PROACTIVE_S = int(os.getenv("COMPANION_PROACTIVE_S", "150"))  # quiet this long -> Saarthi starts talking itself
+PROACTIVE_S = int(os.getenv("COMPANION_PROACTIVE_S", "75"))  # quiet this long -> Saarthi starts talking itself
 
 # Timbre v2.5 voice per language (change to taste after listening)
 VOICES = {"hi-IN": "Poorvi", "pa-IN": "Zayan", "gu-IN": "Veera", "mr-IN": "Ishaan", "bn-IN": "Dhruva",
           "ta-IN": "Asmita", "te-IN": "Suhana", "kn-IN": "Kavin", "ml-IN": "Riyaan", "en-IN": "Pranav"}
 GREETING = "राम राम बॉस! सारथी हाज़िर है। आज कहाँ का सफ़र है?"
+GREETINGS = {"hi-IN": GREETING, "te-IN": "నమస్తే బాస్! సారథి సిద్ధంగా ఉన్నాడు. ఈరోజు ప్రయాణం ఎక్కడికి?",
+             "mr-IN": "राम राम बॉस! सारथी हजर आहे. आज कुठे जायचं?", "gu-IN": "રામ રામ બોસ! સારથી હાજર છે. આજે ક્યાં જવાનું છે?",
+             "pa-IN": "ਸਤ ਸ੍ਰੀ ਅਕਾਲ ਬੌਸ! ਸਾਰਥੀ ਹਾਜ਼ਰ ਹੈ। ਅੱਜ ਕਿੱਥੇ ਜਾਣਾ ਹੈ?", "en-IN": "Hello boss! Saarthi here. Where are we headed today?"}
 
 
 def speakable(text: str) -> str:
@@ -177,8 +180,8 @@ class LiveSession(LiveTarget):
                 bus.live[self.vid] = self
                 db.log_agent(f"driver:{self.code}", "system", "companion_online", {})
                 db.log_agent("system", f"driver:{self.code}", "message",
-                             {"text": GREETING, "vehicle": self.code, "voice": True})
-                await self.worker.queue_frames([TTSSpeakFrame(GREETING)])
+                             {"text": GREETINGS.get(self.lang, GREETING), "vehicle": self.code, "voice": True})
+                await self.worker.queue_frames([TTSSpeakFrame(GREETINGS.get(self.lang, GREETING))])
 
             @transport.event_handler("on_client_disconnected")
             async def _disconnected(t, client):
@@ -295,7 +298,12 @@ def _voice_llm(p: dict):
         _bench_on_error(g)
         return g
     from pipecat.services.openai.llm import OpenAILLMService
-    svc = OpenAILLMService(api_key=p["api_key"], base_url=p["base_url"], settings=OpenAILLMService.Settings(model=p["model"]))
+    extra = {}
+    if "gpt-oss" in p["model"]:
+        # reasoning models think before speaking; "low" keeps a spoken reply fast (seconds, not tens of seconds)
+        extra = {"extra_body": {"reasoning_effort": os.getenv("VOICE_REASONING", "low")}}
+    svc = OpenAILLMService(api_key=p["api_key"], base_url=p["base_url"], settings=OpenAILLMService.Settings(
+        model=p["model"], max_completion_tokens=400, extra=extra))
     # no silent retries on 429/503 (each retry waits seconds while the driver hears nothing): fail fast so the
     # switcher hands the same turn to the next model at once
     svc._client = svc._client.with_options(max_retries=0, timeout=20.0)
@@ -366,7 +374,9 @@ class CompanionGuard(_guard_base()):
             text = (frame.text or "").strip()
             raw = getattr(frame, "language", None)
             lang = str(getattr(raw, "value", raw) or "")
-            if lang in VOICES and lang != self.s.lang:
+            # language is FIXED to the driver's choice (picked on the phone); auto-switching only with LANG_AUTO=1,
+            # because a mixed Hindi-English sentence can be mis-detected and flip the voice mid-trip
+            if os.getenv("LANG_AUTO") == "1" and lang in VOICES and lang != self.s.lang:
                 self.s.lang = lang
                 db.ex("UPDATE vehicles SET lang=? WHERE id=?", (lang, self.s.vid))
                 await self.push_frame(TTSUpdateSettingsFrame(settings={"voice": VOICES[lang], "language": lang}))

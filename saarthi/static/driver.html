@@ -3,6 +3,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="theme-color" content="#0f3d3e">
 <link rel="manifest" href="/static/manifest.json">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
 <title>Saarthi</title>
 <style>
 :root{--bg:#0b1f20;--fg:#f4f1ea;--accent:#f2a541;--ok:#5cc58a;--bad:#e5484d}
@@ -26,21 +27,42 @@ button{font-size:1.4rem;padding:18px 32px;border-radius:999px;border:0;backgroun
 </style></head>
 <body><main>
   <div id="who">Saarthi · Driver Agent</div>
-  <div id="sim">🧪 DEMO truck — drives NH48 by itself (simulated). You play the driver: talk to Saarthi.</div>
+  <div id="sim">🧪 DEMO trip — this truck's movement is simulated (demo data). You play the driver: talk to Saarthi.</div>
   <div id="orb" class="off"></div>
+  <select id="lang" style="font-size:1.1rem;padding:10px 14px;border-radius:12px;background:#183a3b;color:var(--fg);border:0">
+    <option value="hi-IN">हिन्दी</option><option value="te-IN">తెలుగు (Telugu)</option><option value="mr-IN">मराठी</option>
+    <option value="gu-IN">ગુજરાતી</option><option value="pa-IN">ਪੰਜਾਬੀ</option><option value="ta-IN">தமிழ்</option>
+    <option value="kn-IN">ಕನ್ನಡ</option><option value="bn-IN">বাংলা</option><option value="ml-IN">മലയാളം</option>
+    <option value="en-IN">English</option></select>
   <button id="start">सारथी शुरू करें</button>
   <div id="status">एक बार दबाइए — फिर फ़ोन को छूने की ज़रूरत नहीं।</div>
   <div id="card"></div><div id="actions"></div>
+  <div id="dmap" style="display:none;width:100%;max-width:560px;height:190px;border-radius:14px"></div>
   <div id="chat"></div>
   <div class="hint">बस बोलिए — "बोर हो रहा हूँ", "पुराने गाने चलाओ", "आगे ट्रैफ़िक और मौसम कैसा है?", "टायर पंक्चर हो गया", "टोल 280 लगा"</div>
   <audio id="out" autoplay playsinline></audio>
   <audio id="music" playsinline></audio>
 </main>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+let dmap, dmark, dtrail;
+function showPos(pos, speed){
+  const el = document.getElementById("dmap");
+  if (!dmap) { el.style.display = "block"; dmap = L.map(el, {zoomControl:false, attributionControl:false}).setView(pos, 9);
+    L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {maxZoom:19}).addTo(dmap);
+    dmark = L.circleMarker(pos, {radius:9, color:"#f2a541", fillColor:"#f2a541", fillOpacity:1}).addTo(dmap);
+    dtrail = L.polyline([pos], {color:"#f2a541", weight:4}).addTo(dmap); }
+  dmark.setLatLng(pos); dtrail.addLatLng(pos); dmap.panTo(pos);
+  dmark.bindTooltip(`🚚 ${speed||0} km/h`, {permanent:true, direction:"top"});
+}
+</script>
 <script>
 const qs = new URLSearchParams(location.search);
 function store(k, v){ try { if (v) localStorage.setItem(k, v); return localStorage.getItem(k); } catch(_) { return v; } }
 const V = store("saarthi_v", qs.get("v")), K = store("saarthi_k", qs.get("k"));
 const $ = id => document.getElementById(id);
+document.addEventListener("DOMContentLoaded", () => { const l = store("saarthi_lang", qs.get("lang")); if (l) $("lang").value = l;
+  $("lang").onchange = () => store("saarthi_lang", $("lang").value); });
 let pc, dc, wakeLock, geoWatch, pingTimer, reconnectTimer, stream, retries = 0;
 
 function status(t){ $("status").textContent = t; }
@@ -132,7 +154,7 @@ async function connect(){
   const offer = await pc.createOffer(); await pc.setLocalDescription(offer);
   await new Promise(r => { if (pc.iceGatheringState === "complete") r(); else { pc.onicegatheringstatechange = () => pc.iceGatheringState === "complete" && r(); setTimeout(r, 2500); } });
   const res = await fetch(`/api/offer?v=${encodeURIComponent(V)}&k=${encodeURIComponent(K)}`, {method:"POST",
-    headers:{"Content-Type":"application/json"}, body:JSON.stringify({sdp:pc.localDescription.sdp, type:pc.localDescription.type})});
+    headers:{"Content-Type":"application/json"}, body:JSON.stringify({sdp:pc.localDescription.sdp, type:pc.localDescription.type, lang:$("lang").value})});
   if (!res.ok) { status(res.status === 401 ? "लिंक गलत है — मालिक से नया लिंक लीजिए" : "सर्वर से जुड़ नहीं पाया"); return reconnect(); }
   await pc.setRemoteDescription(await res.json());
 }
@@ -159,6 +181,7 @@ async function poll(){
     const d = await r.json();
     $("who").textContent = `Saarthi · ${d.reg}${d.driver ? " · " + d.driver : ""}`;
     simulated = d.simulated; $("sim").style.display = simulated ? "block" : "none";
+    if (d.pos && window.L) { showPos(d.pos, d.speed); }
     if (d.rows.length) {
       const c = $("chat"); c.insertAdjacentHTML("beforeend", d.rows.map(bubble).join(""));
       since = d.rows[d.rows.length - 1].id;

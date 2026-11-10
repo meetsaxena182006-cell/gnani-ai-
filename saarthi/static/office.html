@@ -33,6 +33,16 @@ form{display:flex;gap:8px;margin-top:8px}form input{flex:1}
 </style></head><body>
 <header><b>🏢 Saarthi Office — CEO Agent</b><select id="fleet"></select><span id="st" class="off"></span><button id="talk" style="margin-left:auto;font-weight:600">🎙️ CEO से बात करें</button><span id="vst" class="off"></span><audio id="ceoOut" autoplay playsinline></audio><a id="links" style="color:var(--accent)" target="_blank">🔗 All links</a></header>
 <div class="grid">
+  <div class="card" style="grid-column:1/-1;border:2px solid var(--accent)" id="demo">
+    <div class="sh"><b>🎬 Demo trip — Udaipur → Hyderabad (Telangana)</b><small class="off">SIMULATED truck MW-T1 · all data demo · NHAI toll plazas real (2019-20 rates)</small></div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin:8px 0">
+      <button onclick="demo('start')">▶ Start / restart</button><button onclick="demo('next')">⏭ Next event</button>
+      <button onclick="demo('auto')">⏯ Auto-play all</button><button onclick="demo('stop')" style="background:var(--muted)">⏸ Pause auto</button>
+      <span id="dkm" class="score"></span></div>
+    <div style="height:8px;background:var(--line);border-radius:6px;overflow:hidden"><div id="dbar" style="height:100%;width:0;background:var(--accent);transition:width 1s"></div></div>
+    <div style="display:grid;grid-template-columns:1fr 1.4fr;gap:12px;margin-top:8px">
+      <ol id="dsteps" style="margin:0;padding-left:20px;font-size:.9rem"></ol><div id="dlog" style="font-size:.88rem;max-height:260px;overflow:auto"></div></div>
+  </div>
   <div class="card" style="grid-column:1/-1"><div id="sentinel"><small class="off">👁️ CEO Sentinel loading…</small></div></div>
   <div class="card"><div id="map"></div><table id="trucks"><thead><tr><th>Truck</th><th>Driver</th><th>Trip</th><th>Plan (ETA · next stop)</th><th>Companion</th><th>Speed</th><th>Last seen</th><th>Watchdog</th></tr></thead><tbody></tbody></table></div>
   <div class="card"><b>💬 Conversations</b> <small>(what the CEO Agent tells you, and every driver ↔ Driver Agent talk)</small>
@@ -156,4 +166,23 @@ async function ceoCall(){
 document.getElementById("talk").onclick = () => ceoCall().catch(e => { document.getElementById("vst").textContent = " ❌ " + e.message; vpc = null; document.getElementById("talk").textContent = "🎙️ CEO से बात करें"; });
 document.getElementById("links").href = "/links?k=" + encodeURIComponent(KEY || "");
 refresh(); setInterval(refresh, 15000); setInterval(conv, 2500); setTimeout(conv, 800);
+
+// ---- demo trip director ----
+let demoLine = null;
+async function demo(action){
+  try { await fetch("/api/demo/trip", {method:"POST", headers:H, body: JSON.stringify({action, gap: 30})}); } catch(e) {}
+  setTimeout(demoRefresh, 400);
+}
+async function demoRefresh(){
+  let d; try { d = await api("/api/demo/trip"); } catch(e) { return; }
+  const pct = d.total_km ? Math.round(100 * d.km / d.total_km) : 0;
+  document.getElementById("dbar").style.width = pct + "%";
+  document.getElementById("dkm").textContent = d.total_km ? `${d.km} / ${d.total_km} km · ${pct}%` + (d.running ? " · ⏳ running…" : "") + (d.auto ? " · auto ▶" : "") : "not started";
+  document.getElementById("dsteps").innerHTML = d.steps.map((s, i) =>
+    `<li style="${i <= d.step ? "color:var(--accent);font-weight:600" : (i === d.step + 1 && d.running ? "color:var(--warn)" : "")}">${i <= d.step ? "✓ " : ""}${s}</li>`).join("");
+  document.getElementById("dlog").innerHTML = d.log.slice().reverse().map(l => `<div><small class="off">${l.t}</small> ${l.text}</div>`).join("");
+  if (d.route && d.route.length && !demoLine) { demoLine = L.polyline(d.route, {color:"#f2a541", weight:4, opacity:.8}).addTo(map); }
+  if (d.route && d.route.length && d.step === 0 && !d.running) map.fitBounds(demoLine.getBounds(), {padding:[20,20]});
+}
+setInterval(demoRefresh, 2000); demoRefresh();
 </script></body></html>
