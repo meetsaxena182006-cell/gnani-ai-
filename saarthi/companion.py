@@ -160,7 +160,9 @@ class LiveSession(LiveTarget):
             self.context = context
             agg = LLMContextAggregatorPair(context, user_params=LLMUserAggregatorParams(vad_analyzer=SileroVADAnalyzer()))
             guard = CompanionGuard(self)
-            pipeline = Pipeline([transport.input(), stt, guard, agg.user(), llm, tts, transport.output(), agg.assistant()])
+            spoken = SpokenLog(self)
+            pipeline = Pipeline([transport.input(), stt, guard, agg.user(), llm, spoken, tts, transport.output(),
+                                 agg.assistant()])
             self.worker = PipelineWorker(pipeline, params=PipelineParams(enable_metrics=True),
                                          cancel_on_idle_timeout=False)
 
@@ -168,6 +170,8 @@ class LiveSession(LiveTarget):
             async def _connected(t, client):
                 bus.live[self.vid] = self
                 db.log_agent(f"driver:{self.code}", "system", "companion_online", {})
+                db.log_agent("system", f"driver:{self.code}", "message",
+                             {"text": GREETING, "vehicle": self.code, "voice": True})
                 await self.worker.queue_frames([TTSSpeakFrame(GREETING)])
 
             @transport.event_handler("on_client_disconnected")
@@ -189,6 +193,28 @@ class LiveSession(LiveTarget):
 def _guard_base():
     from pipecat.processors.frame_processor import FrameProcessor
     return FrameProcessor
+
+
+class SpokenLog(_guard_base()):
+    """Collects each reply the LLM speaks and logs it, so the office sees the whole voice conversation."""
+
+    def __init__(self, session: "LiveSession") -> None:
+        super().__init__()
+        self.s = session
+        self.buf: list[str] = []
+
+    async def process_frame(self, frame, direction):
+        from pipecat.frames.frames import LLMFullResponseEndFrame, LLMTextFrame
+        await super().process_frame(frame, direction)
+        if isinstance(frame, LLMTextFrame):
+            self.buf.append(frame.text or "")
+        elif isinstance(frame, LLMFullResponseEndFrame) and self.buf:
+            text = "".join(self.buf).strip()
+            self.buf = []
+            if text:
+                db.log_agent("system", f"driver:{self.s.code}", "message",
+                             {"text": text, "vehicle": self.s.code, "voice": True})
+        await self.push_frame(frame, direction)
 
 
 class CompanionGuard(_guard_base()):
@@ -215,7 +241,9 @@ class CompanionGuard(_guard_base()):
                 self.s.lang = lang
                 db.ex("UPDATE vehicles SET lang=? WHERE id=?", (lang, self.s.vid))
                 await self.push_frame(TTSUpdateSettingsFrame(settings={"voice": VOICES[lang], "language": lang}))
-            db.log_agent(f"driver:{self.s.code}", "stt", "heard", {"text": text, "lang": lang})
+            if text:
+                db.log_agent(f"driver:{self.s.code}", "driver_agent", "driver_said",
+                             {"text": text, "lang": lang, "vehicle": self.s.code, "voice": True})
             v = db.vehicle(self.s.vid)
             reply = await drv.intercept(v, text) if text else None
             if reply:

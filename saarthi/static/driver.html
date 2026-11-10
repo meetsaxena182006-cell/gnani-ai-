@@ -13,11 +13,11 @@ main{min-height:100%;display:flex;flex-direction:column;align-items:center;justi
 #orb.talking{animation:pulse 1.2s infinite}#orb.off{filter:grayscale(1) brightness(.5)}
 @keyframes pulse{0%{box-shadow:0 0 0 0 rgba(242,165,65,.55)}70%{box-shadow:0 0 0 40px rgba(242,165,65,0)}100%{box-shadow:0 0 0 0 rgba(242,165,65,0)}}
 button{font-size:1.4rem;padding:18px 32px;border-radius:999px;border:0;background:var(--accent);color:#1b1206;font-weight:700}
-#status{font-size:1.1rem;opacity:.85}#card{max-width:520px;width:100%;font-size:1.05rem;line-height:1.5;white-space:pre-wrap;opacity:.9}
+#status{font-size:1.1rem;opacity:.85}#card{display:none;max-width:520px;width:100%;font-size:1.05rem;line-height:1.5;white-space:pre-wrap;opacity:.9}
 .podbtn{display:inline-block;margin:6px;padding:14px 22px;border-radius:12px;background:var(--accent);color:#1b1206;font-size:1.2rem;font-weight:700}
 #actions a{display:inline-block;margin:6px;padding:14px 22px;border-radius:12px;background:#183a3b;color:var(--fg);text-decoration:none;font-size:1.2rem}
 #who{font-size:.95rem;opacity:.8}#sim{display:none;background:#5a3b0b;border-radius:10px;padding:8px 12px;font-size:.9rem;max-width:520px}
-#chat{width:100%;max-width:560px;display:flex;flex-direction:column;gap:8px;text-align:left;max-height:46vh;overflow:auto;padding:4px}
+#chat{width:100%;max-width:560px;display:flex;flex-direction:column;gap:8px;text-align:left;max-height:34vh;overflow:hidden;padding:4px;justify-content:flex-end}
 .b{padding:10px 12px;border-radius:14px;max-width:88%;line-height:1.4;white-space:pre-wrap;font-size:1.02rem}
 .b.ag{background:#183a3b;align-self:flex-start}.b.me{background:var(--accent);color:#1b1206;align-self:flex-end}
 .b small{display:block;opacity:.6;font-size:.75rem;margin-top:2px}
@@ -26,14 +26,13 @@ button{font-size:1.4rem;padding:18px 32px;border-radius:999px;border:0;backgroun
 </style></head>
 <body><main>
   <div id="who">Saarthi · Driver Agent</div>
-  <div id="sim">🧪 DEMO truck — it drives NH48 by itself (simulated). You play the driver: answer the CEO's questions here.</div>
+  <div id="sim">🧪 DEMO truck — drives NH48 by itself (simulated). You play the driver: talk to Saarthi.</div>
   <div id="orb" class="off"></div>
   <button id="start">सारथी शुरू करें</button>
   <div id="status">एक बार दबाइए — फिर फ़ोन को छूने की ज़रूरत नहीं।</div>
   <div id="card"></div><div id="actions"></div>
   <div id="chat"></div>
-  <form id="say"><input id="msg" autocomplete="off" placeholder="Likhiye ya keyboard ka 🎤 dabaiye…"><button>भेजें</button></form>
-  <div class="hint">Baat kariye (Start) ya likhiye — dono se Saarthi sunta hai. Jaise: "bore ho raha hoon", "purane gaane chalao", "aage traffic kaisa hai?", "toll 280 laga".</div>
+  <div class="hint">बस बोलिए — "बोर हो रहा हूँ", "पुराने गाने चलाओ", "आगे ट्रैफ़िक और मौसम कैसा है?", "टायर पंक्चर हो गया", "टोल 280 लगा"</div>
   <audio id="out" autoplay playsinline></audio>
   <audio id="music" playsinline></audio>
 </main>
@@ -151,7 +150,7 @@ let since = 0, simulated = false, webGps, firstPoll = true;
 function esc(s){ return String(s ?? "").replace(/[&<>]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;"}[c])); }
 function bubble(r){
   const me = r.kind === "driver_said", t = new Date(r.ts).toLocaleTimeString([], {hour:"2-digit", minute:"2-digit"});
-  return `<div class="b ${me ? "me" : "ag"}">${esc(r.payload.text)}<small>${me ? "Aap" : "Saarthi"} · ${t}</small></div>`;
+  return `<div class="b ${me ? "me" : "ag"}">${esc(r.payload.text)}<small>${me ? "आप" : "सारथी"} · ${t}</small></div>`;
 }
 async function poll(){
   try {
@@ -162,7 +161,8 @@ async function poll(){
     simulated = d.simulated; $("sim").style.display = simulated ? "block" : "none";
     if (d.rows.length) {
       const c = $("chat"); c.insertAdjacentHTML("beforeend", d.rows.map(bubble).join(""));
-      since = d.rows[d.rows.length - 1].id; c.scrollTop = 1e9;
+      since = d.rows[d.rows.length - 1].id;
+      while (c.children.length > 4) c.firstElementChild.remove();
       const last = d.rows[d.rows.length - 1];
       // typed-chat replies can carry actions (songs, call buttons); the voice call delivers its own
       if (!firstPoll && last.kind === "message" && !(dc && dc.readyState === "open") &&
@@ -182,16 +182,8 @@ function startWebGps(){
       body: JSON.stringify({lat:p.coords.latitude, lon:p.coords.longitude, speed:p.coords.speed, acc:p.coords.accuracy})}).catch(()=>{});
   }, e => console.warn(e), {enableHighAccuracy:true, maximumAge:15000, timeout:30000});
 }
-$("say").onsubmit = async e => {
-  e.preventDefault(); const text = $("msg").value.trim(); if (!text) return;
-  $("msg").value = ""; $("msg").placeholder = "Saarthi soch raha hai…";
-  $("chat").insertAdjacentHTML("beforeend", `<div class="b me" data-pending>${esc(text)}<small>Aap · bhej rahe hain…</small></div>`); $("chat").scrollTop = 1e9;
-  try { await fetch(`/api/driver/chat?v=${encodeURIComponent(V)}&k=${encodeURIComponent(K)}`, {method:"POST",
-        headers:{"Content-Type":"application/json"}, body: JSON.stringify({text})}); } catch(_) {}
-  document.querySelectorAll("[data-pending]").forEach(x => x.remove());
-  $("msg").placeholder = "Likhiye ya keyboard ka 🎤 dabaiye…"; poll();
-};
 if (V && K) { poll(); setInterval(poll, 2500); }
+fetch("/health").then(r => r.json()).then(h => { if (!h.voice || !h.ai) { status("आवाज़ अभी बंद है — सर्वर पर Gnani और AI key लगनी बाकी है"); $("start").disabled = true; } }).catch(() => {});
 
 $("out").onplaying = () => $("orb").classList.add("talking");
 $("out").onpause = () => $("orb").classList.remove("talking");
