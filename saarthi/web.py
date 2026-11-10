@@ -187,7 +187,13 @@ async def api_ceo_chat(req: web.Request) -> web.Response:
     f = db.one("SELECT * FROM fleets WHERE upper(code)=upper(?)", (body.get("fleet", ""),))
     if not f or not body.get("text"):
         return web.json_response({"error": "fleet and text required"}, status=400)
-    return web.json_response({"reply": await ceo.handle_owner(f, body["text"])})
+    try:
+        reply = await ceo.handle_owner(f, body["text"])
+    except Exception as e:  # every AI model busy / key problem: say so instead of a 500
+        import logging
+        logging.getLogger("saarthi.web").warning("CEO chat failed: %s", type(e).__name__)
+        reply = "AI abhi busy hai (Google ka model jawab nahi de raha). 1 minute baad phir poochiye."
+    return web.json_response({"reply": reply})
 
 
 async def api_fastag_statement(req: web.Request) -> web.Response:

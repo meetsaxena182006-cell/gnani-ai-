@@ -52,9 +52,19 @@ def llm_providers() -> list[dict]:
     out = []
     for prefix in ("LLM", "LLM2", "LLM3"):
         key, url, model = _secret(f"{prefix}_API_KEY"), os.getenv(f"{prefix}_BASE_URL"), os.getenv(f"{prefix}_MODEL")
+        if prefix == "LLM" and key:   # primary: Gemini defaults when only the key is given
+            url, model = url or settings.llm_base_url, model or settings.llm_model
         if key and url and model:
             out.append({"name": os.getenv(f"{prefix}_NAME", prefix.lower()), "api_key": key, "base_url": url, "model": model})
-    return out
+    # Gemini models get busy (503) or retired (404): try sibling models on the same key before giving up
+    fallbacks = _list("LLM_FALLBACK_MODELS", "gemini-flash-latest,gemini-2.5-flash,gemini-flash-lite-latest,gemini-2.5-flash-lite")
+    extra = []
+    for p in out:
+        if "generativelanguage.googleapis.com" in p["base_url"]:
+            for m in fallbacks:
+                if all(m != q["model"] for q in out + extra if q["api_key"] == p["api_key"]):
+                    extra.append({**p, "name": f"{p['name']}:{m}", "model": m})
+    return out + extra
 
 
 settings = Settings()
