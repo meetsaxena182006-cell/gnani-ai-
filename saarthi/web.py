@@ -173,6 +173,38 @@ async def api_demo_trip(req: web.Request) -> web.Response:
     return web.json_response(scenario.state())
 
 
+async def film_page(req: web.Request) -> web.FileResponse:
+    return web.FileResponse(STATIC / "film.html")
+
+
+async def api_film_prepare(req: web.Request) -> web.Response:
+    """Film mode: capture the whole demo trip at full speed + pre-make every voice with Gnani Timbre (film.py)."""
+    _auth(req)
+    from . import film
+    return web.json_response(film.start())
+
+
+async def api_film_state(req: web.Request) -> web.Response:
+    from . import film
+    return web.json_response(film.state())
+
+
+async def api_film_timeline(req: web.Request) -> web.Response:
+    from . import film
+    tl = film.timeline()
+    if not tl:
+        raise web.HTTPNotFound(text="film not prepared yet")
+    return web.json_response(tl)
+
+
+async def film_audio(req: web.Request) -> web.Response:
+    from . import film
+    b = film.audio(int(req.match_info["n"]))
+    if b is None:
+        raise web.HTTPNotFound()
+    return web.Response(body=b, content_type="audio/ogg", headers={"Cache-Control": "public, max-age=86400"})
+
+
 async def api_owner_ice(req: web.Request) -> web.Response:
     _auth(req)
     from . import turn
@@ -477,6 +509,11 @@ def build_app() -> web.Application:
         web.get("/api/owner/ice", api_owner_ice),
         web.get("/api/demo/trip", api_demo_trip),
         web.post("/api/demo/trip", api_demo_trip),
+        web.get("/film", film_page),
+        web.post("/api/film/prepare", api_film_prepare),
+        web.get("/api/film/state", api_film_state),
+        web.get("/api/film/timeline", api_film_timeline),
+        web.get("/film/audio/{n}.ogg", film_audio),
         web.get("/api/fleet", api_fleet),
         web.post("/api/ceo/chat", api_ceo_chat),
         web.post("/api/fastag/statement", api_fastag_statement),

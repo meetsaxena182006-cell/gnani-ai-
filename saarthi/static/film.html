@@ -1,0 +1,214 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Saarthi — Film mode</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<style>
+:root{--bg:#0b1020;--panel:#121a30;--line:#22305a;--ink:#e8ecf8;--mute:#8d9bc4;--sa:#ff9f1c;--dr:#2ec4b6;--ceo:#7b8cff;--ow:#e05ea8;--ok:#3ddc84;--bad:#ff5d5d}
+*{box-sizing:border-box}html,body{margin:0;height:100%;background:var(--bg);color:var(--ink);font:15px/1.4 system-ui,"Segoe UI","Noto Sans Devanagari",sans-serif;overflow:hidden}
+#app{display:grid;grid-template-rows:64px 1fr;height:100vh}
+header{display:flex;align-items:center;gap:18px;padding:0 22px;border-bottom:1px solid var(--line);background:#0e1528}
+.brand{font-weight:800;font-size:22px;letter-spacing:.5px}.brand span{color:var(--sa)}
+#steptitle{font-size:18px;font-weight:600;flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#dots{display:flex;gap:5px}#dots i{width:10px;height:10px;border-radius:50%;background:var(--line);display:block}#dots i.on{background:var(--sa)}#dots i.done{background:#6b5530}
+.tag{font-size:12px;padding:3px 8px;border:1px solid var(--line);border-radius:20px;color:var(--mute)}
+main{display:grid;grid-template-columns:380px 1fr 420px;gap:16px;padding:16px;min-height:0}
+.phone{background:#05070d;border:10px solid #1d2338;border-radius:36px;display:flex;flex-direction:column;overflow:hidden;min-height:0;box-shadow:0 10px 40px #0008}
+.ph-top{padding:10px 14px;background:#101830;display:flex;align-items:center;gap:10px}
+.ph-top b{font-size:15px}.ph-top small{color:var(--mute);display:block;font-size:12px}
+#pmap{height:170px;flex:none}
+.chat{flex:1;overflow:hidden;padding:10px;display:flex;flex-direction:column;justify-content:flex-end;gap:8px}
+.b{max-width:88%;padding:8px 11px;border-radius:14px;font-size:14.5px;animation:pop .25s ease-out}
+.b.sa{background:#2a1d08;border:1px solid #6b4a12;align-self:flex-start}.b.dr{background:#0b2c2a;border:1px solid #1e6b64;align-self:flex-end}
+.b.ceo{background:#161c46;border:1px solid #39459a;align-self:flex-start}.b.ow{background:#3a1430;border:1px solid #8a2e6c;align-self:flex-end}
+.b .who{font-size:11px;font-weight:700;letter-spacing:.4px;text-transform:uppercase;margin-bottom:3px;display:flex;gap:6px;align-items:center}
+.b.sa .who{color:var(--sa)}.b.dr .who{color:var(--dr)}.b.ceo .who{color:var(--ceo)}.b.ow .who{color:var(--ow)}
+.chip{display:block;margin-bottom:5px;padding:5px 8px;border-radius:8px;background:#0006;font-size:13px;font-weight:600}
+.live{font-size:10px;background:var(--ok);color:#002;padding:1px 5px;border-radius:6px}
+.wave{display:inline-flex;gap:2px;height:10px;align-items:flex-end}.wave i{width:3px;background:currentColor;animation:w .6s infinite ease-in-out}.wave i:nth-child(2){animation-delay:.15s}.wave i:nth-child(3){animation-delay:.3s}
+@keyframes w{0%,100%{height:3px}50%{height:10px}}@keyframes pop{from{transform:translateY(8px);opacity:0}}
+.center{display:flex;flex-direction:column;gap:12px;min-height:0}
+#map{flex:1;border-radius:16px;border:1px solid var(--line)}
+.stats{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}
+.stat{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:10px 12px}
+.stat small{color:var(--mute);font-size:12px}.stat b{display:block;font-size:22px}
+.office{background:var(--panel);border:1px solid var(--line);border-radius:16px;display:flex;flex-direction:column;min-height:0;overflow:hidden}
+.office h3{margin:0;padding:12px 14px;border-bottom:1px solid var(--line);font-size:16px;display:flex;justify-content:space-between}
+.money{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;padding:10px 12px;border-bottom:1px solid var(--line)}
+.money div{background:#0c1226;border-radius:10px;padding:7px 9px}.money small{color:var(--mute);font-size:11px}.money b{display:block;font-size:17px}
+#caption{position:fixed;left:50%;top:84px;transform:translateX(-50%);max-width:70vw;background:#000c;border:1px solid var(--line);border-left:5px solid var(--sa);padding:10px 18px;border-radius:10px;font-size:17px;opacity:0;transition:opacity .3s;z-index:900}
+#caption.on{opacity:1}
+#cover{position:fixed;inset:0;background:radial-gradient(circle at 30% 20%,#1b2550,#070a14 70%);z-index:1000;display:flex;align-items:center;justify-content:center;text-align:center}
+#cover .box{max-width:820px;padding:30px}
+#cover h1{font-size:52px;margin:0 0 6px}#cover h1 span{color:var(--sa)}
+#cover p{color:var(--mute);font-size:18px;margin:8px 0}
+.labels{display:flex;flex-wrap:wrap;gap:8px;justify-content:center;margin:18px 0}
+.labels span{border:1px solid var(--line);border-radius:20px;padding:5px 12px;font-size:14px}
+button{background:var(--sa);color:#1a1000;border:0;border-radius:12px;padding:14px 28px;font-size:20px;font-weight:800;cursor:pointer}
+button.ghost{background:transparent;color:var(--ink);border:1px solid var(--line);font-size:15px;padding:9px 16px;font-weight:600}
+#status{margin-top:14px;color:var(--mute);font-size:15px;min-height:22px}
+#end{position:fixed;inset:0;background:#070a14f2;z-index:1000;display:none;align-items:center;justify-content:center;text-align:center}
+#end .grid{display:grid;grid-template-columns:repeat(3,200px);gap:14px;margin:24px auto}
+#end .grid div{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:14px}#end .grid b{display:block;font-size:26px}
+.truck{font-size:30px;filter:drop-shadow(0 2px 4px #000)}
+.leaflet-container{background:#0b1020}
+.darktiles{filter:invert(1) hue-rotate(200deg) brightness(.85) contrast(.9) saturate(.6)}
+</style></head>
+<body>
+<div id="app">
+<header><div class="brand">सारथी <span>Saarthi</span></div><div id="steptitle">Udaipur → Hyderabad</div><div id="dots"></div>
+<span class="tag">SIMULATED TRIP · DEMO DATA</span><span class="tag" id="kmtag">0 km</span></header>
+<main>
+  <div class="phone"><div class="ph-top"><div style="font-size:26px">🚛</div><div><b>Saarthi · driver phone</b><small>RJ00 DEMO 01 · Ramesh (demo) · Hindi</small></div></div>
+    <div id="pmap"></div><div class="chat" id="pchat"></div></div>
+  <div class="center"><div id="map"></div>
+    <div class="stats"><div class="stat"><small>Distance</small><b id="s_km">0 / 0 km</b></div><div class="stat"><small>Speed</small><b id="s_sp">0 km/h</b></div>
+      <div class="stat"><small>Toll plazas (FASTag)</small><b id="s_toll">0</b></div><div class="stat"><small>Weather</small><b id="s_wx">☀️ Clear</b></div></div></div>
+  <div class="office"><h3><span>🏢 CEO Office — owner view</span><span style="color:var(--mute);font-size:13px">AI CEO Agent</span></h3>
+    <div class="money"><div><small>Freight</small><b id="m_fr">₹0</b></div><div><small>Diesel</small><b id="m_di">₹0</b></div><div><small>Tolls</small><b id="m_to">₹0</b></div>
+      <div><small>Repair</small><b id="m_re">₹0</b></div><div><small>Spent</small><b id="m_sp">₹0</b></div><div><small>Margin</small><b id="m_pr" style="color:var(--ok)">₹0</b></div></div>
+    <div class="chat" id="ochat"></div></div>
+</main></div>
+<div id="caption"></div>
+<div id="cover"><div class="box">
+  <h1>सारथी <span>Saarthi</span></h1>
+  <p>AI co-driver for the truck driver + AI CEO for the fleet owner — talking in Hindi</p>
+  <p style="color:var(--ink);font-size:21px">A complete trip: Udaipur (Rajasthan) → Hyderabad (Telangana)</p>
+  <div class="labels"><span>⚠️ Simulated trip · all people, money & events are demo data</span><span>🗣️ Voices: Gnani Timbre v2.5 (TTS)</span>
+    <span>🎙️ Live calls: Gnani Prisma v3.0 (STT)</span><span>🧠 Agents: Groq gpt-oss-120b · Gemini backup</span><span>🛣️ Tolls: NHAI public data</span></div>
+  <p style="font-size:14px">Agent lines marked <span class="live">LIVE AI</span> were answered by the real agents when this film was prepared; announcements come from the real system's scenario engine.</p>
+  <div style="margin-top:22px"><button id="play" disabled>▶ Play film</button></div>
+  <div id="status">Loading…</div>
+  <div style="margin-top:10px"><button class="ghost" id="prep">↻ Prepare film again (office key)</button></div>
+</div></div>
+<div id="end"><div><h1 style="font-size:44px;margin:0">📦 Delivered — Udaipur → Hyderabad</h1><p style="color:var(--mute)">Simulated trip · demo data</p>
+  <div class="grid" id="endgrid"></div>
+  <p style="font-size:18px">One driver. One owner. Two AI agents — on voice, in Hindi.</p>
+  <p style="color:var(--mute)">Gnani Prisma v3.0 (speech-to-text) · Gnani Timbre v2.5 (voice) · Groq / Gemini (reasoning)</p></div></div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+const Q = new URLSearchParams(location.search), SPEED = parseFloat(Q.get("speed") || "1");
+const $ = id => document.getElementById(id), sleep = ms => new Promise(r => setTimeout(r, ms / SPEED));
+const inr = n => "₹" + Math.round(n || 0).toLocaleString("en-IN");
+let TL = null, blobs = {}, route = [], map, pmap, truck, ptruck, trail, done, posNow = null;
+
+function tiles(m){ L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {attribution:"© OpenStreetMap", maxZoom:18, className:"darktiles"}).addTo(m); }
+function ptAt(km){
+  for (let i = 1; i < route.length; i++) if (route[i][2] >= km) {
+    const a = route[i-1], b = route[i], f = (km - a[2]) / Math.max(1e-6, b[2] - a[2]);
+    return [a[0] + (b[0]-a[0])*f, a[1] + (b[1]-a[1])*f];
+  }
+  return route.length ? [route[route.length-1][0], route[route.length-1][1]] : [24.58, 73.71];
+}
+function setupMaps(){
+  map = L.map("map", {zoomControl:false, attributionControl:true}); tiles(map);
+  pmap = L.map("pmap", {zoomControl:false, attributionControl:false, dragging:false}); tiles(pmap);
+  const line = route.map(r => [r[0], r[1]]);
+  L.polyline(line, {color:"#3b4a80", weight:6}).addTo(map); L.polyline(line, {color:"#3b4a80", weight:4}).addTo(pmap);
+  trail = L.polyline([], {color:"#ff9f1c", weight:6}).addTo(map); done = L.polyline([], {color:"#ff9f1c", weight:4}).addTo(pmap);
+  const icon = L.divIcon({className:"truck", html:"🚛", iconSize:[34,34], iconAnchor:[17,17]});
+  truck = L.marker(line[0], {icon}).addTo(map); ptruck = L.marker(line[0], {icon}).addTo(pmap);
+  L.marker(line[line.length-1], {icon:L.divIcon({className:"truck", html:"🏁", iconSize:[30,30]})}).addTo(map);
+  map.fitBounds(L.latLngBounds(line).pad(0.08)); pmap.setView(line[0], 11);
+  $("s_km").textContent = `0 / ${TL.total_km} km`;
+}
+function moveTo(km, speed){
+  const p = ptAt(km); posNow = p; truck.setLatLng(p); ptruck.setLatLng(p); pmap.panTo(p, {animate:false});
+  trail.addLatLng(p); done.addLatLng(p);
+  $("kmtag").textContent = Math.round(km) + " km"; $("s_km").textContent = `${Math.round(km)} / ${TL.total_km} km`;
+  $("s_sp").textContent = Math.round(speed) + " km/h";
+}
+async function animate(ev){
+  const dist = ev.to - ev.from; if (dist <= 0) return;
+  const dur = Math.min(5200, Math.max(1600, dist * 14)) / SPEED, t0 = performance.now();
+  await new Promise(res => { function f(t){ const k = Math.min(1, (t - t0) / dur); moveTo(ev.from + dist * k, ev.speed || 58); k < 1 ? requestAnimationFrame(f) : res(); } requestAnimationFrame(f); });
+  $("s_sp").textContent = "0 km/h";
+}
+function money(m){ if (!m) return;
+  $("m_fr").textContent = inr(TL.freight); $("m_di").textContent = inr(m.diesel); $("m_to").textContent = inr(m.toll);
+  $("m_re").textContent = inr(m.repair); $("m_sp").textContent = inr(m.spent); $("m_pr").textContent = inr(m.profit);
+  $("s_toll").textContent = `${m.toll_count || 0} · ${inr(m.toll)}`;
+}
+const WHO = {saarthi:["sa","Saarthi (AI co-driver)"], driver:["dr","Ramesh · driver (demo)"], ceo:["ceo","CEO Agent (AI)"], owner:["ow","Owner (demo)"]};
+function bubble(ev){
+  const [cls, name] = WHO[ev.kind], box = (ev.kind === "ceo" || ev.kind === "owner") ? $("ochat") : $("pchat");
+  const d = document.createElement("div"); d.className = "b " + cls;
+  const isCeo = ev.kind === "ceo" && !ev.live;
+  const card = !isCeo && ev.speak && ev.text && ev.text !== ev.speak ? ev.text : null;
+  const body = isCeo ? ev.text : (ev.speak || ev.text);
+  d.innerHTML = `<div class="who">${name} ${ev.live ? '<span class="live">LIVE AI</span>' : ""} <span class="wave" style="display:none"><i></i><i></i><i></i></span></div>`
+    + (card ? `<span class="chip"></span>` : "") + `<div class="tx"></div>`;
+  if (card) d.querySelector(".chip").textContent = card;
+  d.querySelector(".tx").textContent = body;
+  if (isCeo && ev.speak) { const sp = document.createElement("div"); sp.style.cssText = "margin-top:5px;font-size:13px;color:#b9c3ff;font-style:italic"; sp.textContent = "🔊 " + ev.speak; d.appendChild(sp); }
+  box.appendChild(d); while (box.children.length > 7) box.removeChild(box.firstChild);
+  return d;
+}
+async function playClips(ids){
+  for (const n of ids || []) { const url = blobs[n]; if (!url) continue;
+    await new Promise(res => { const a = new Audio(url); a.playbackRate = Math.min(1.25, SPEED); a.onended = res; a.onerror = res; a.play().catch(res); });
+    await sleep(180);
+  }
+}
+async function speak(ev){
+  const d = bubble(ev), w = d.querySelector(".wave");
+  if (ev.audio && ev.audio.length) { w.style.display = "inline-flex"; await playClips(ev.audio); w.style.display = "none"; }
+  else await sleep(Math.min(7000, 1400 + (ev.text || "").length * 28));
+  await sleep(350);
+}
+async function caption(t){ const c = $("caption"); c.textContent = t; c.classList.add("on"); await sleep(Math.min(5200, 1800 + t.length * 22)); }
+function stepUI(i){
+  $("steptitle").textContent = `${i + 1}/${TL.steps.length} · ${TL.steps[i]}`;
+  [...$("dots").children].forEach((d, k) => d.className = k < i ? "done" : k === i ? "on" : "");
+  const t = TL.steps[i].toLowerCase();
+  if (t.includes("rain")) $("s_wx").textContent = "🌧️ Heavy rain"; else if (t.includes("traffic")) $("s_wx").textContent = "🚦 Jam ahead"; else $("s_wx").textContent = "☀️ Clear";
+}
+async function run(){
+  $("cover").style.display = "none";
+  try { document.documentElement.requestFullscreen().catch(() => {}); } catch(_) {}
+  await sleep(800);
+  for (const ev of TL.events) {
+    if (ev.money) money(ev.money);
+    if (ev.kind === "step") { stepUI(ev.step); await sleep(700); }
+    else if (ev.kind === "move") await animate(ev);
+    else if (ev.kind === "note") await caption("🎬 " + ev.text);
+    else if (WHO[ev.kind]) { if (ev.kind === "ceo" && ev.pos) {} await speak(ev); }
+  }
+  $("caption").classList.remove("on");
+  await sleep(1500); showEnd();
+}
+function showEnd(){
+  const f = TL.final || {};
+  $("endgrid").innerHTML = [["Distance", TL.total_km + " km"], ["Freight", inr(TL.freight)], ["Diesel", inr(f.diesel)], ["Tolls", `${inr(f.toll)} (${f.toll_count || 0})`],
+    ["Repair", inr(f.repair)], ["Margin", inr(f.profit)]].map(([a, b]) => `<div><small>${a}</small><b>${b}</b></div>`).join("");
+  $("end").style.display = "flex";
+}
+async function load(){
+  const st = await fetch("/api/film/state").then(r => r.json());
+  if (st.status !== "ready") {
+    $("status").textContent = st.status === "idle" ? "Film not prepared yet — click “Prepare film” (takes ~3–5 min)." : `Preparing… ${st.progress || st.status}${st.error ? " · ERROR: " + st.error : ""}`;
+    if (st.status === "capturing" || st.status === "voicing") setTimeout(load, 3000);
+    return;
+  }
+  TL = await fetch("/api/film/timeline").then(r => r.json());
+  route = TL.route; $("dots").innerHTML = TL.steps.map(() => "<i></i>").join("");
+  const ids = TL.events.flatMap(e => e.audio || []); let k = 0;
+  for (const n of ids) { $("status").textContent = `Loading voices ${++k}/${ids.length}…`;
+    try { const b = await fetch(`/film/audio/${n}.ogg`).then(r => r.ok ? r.blob() : null); if (b) blobs[n] = URL.createObjectURL(b); } catch(_) {} }
+  setupMaps(); money(TL.events.find(e => e.money)?.money);
+  $("status").textContent = `Ready · ${TL.events.length} moments · ${ids.length} Gnani voice clips. Start your screen recorder, then press Play.`;
+  $("play").disabled = false;
+}
+$("play").onclick = run;
+$("prep").onclick = async () => {
+  let key = Q.get("k"); try { key = key || localStorage.getItem("saarthi_key"); } catch(_) {}
+  if (!key) key = prompt("Office key (API_SHARED_SECRET)");
+  if (!key) return;
+  const r = await fetch("/api/film/prepare", {method:"POST", headers:{"X-Saarthi-Key": key}});
+  if (r.status === 401) { $("status").textContent = "Wrong office key."; return; }
+  try { localStorage.setItem("saarthi_key", key); } catch(_) {}
+  $("play").disabled = true; setTimeout(load, 1500);
+};
+load();
+</script>
+</body></html>

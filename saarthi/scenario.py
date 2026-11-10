@@ -210,11 +210,14 @@ async def drive_to(km_target: float, seconds: float = 10.0, speed: float = 58.0)
     km_target = min(km_target, total_km())
     # pass through every route vertex (toll plazas are vertices), then the exact target
     marks = [c for c in _cum if start < c < km_target] + [km_target]
+    if S.get("film") is not None:      # film capture: remember the drive so the playback can animate it
+        S["film"].append({"kind": "move", "from": round(start, 1), "to": round(km_target, 1), "speed": speed})
     for km in marks:
         S["km"] = km
         la, lo = _point(km)
         await fatigue.location_update(v["id"], la, lo, speed)
-        await asyncio.sleep(seconds / len(marks))
+        if not S.get("fast"):
+            await asyncio.sleep(seconds / len(marks))
 
 
 async def stop_here() -> None:
@@ -375,7 +378,7 @@ async def s_breakdown():
     note("EMERGENCY: rear tyre burst 15 km before Akola → breakdown flow (real tools)")
     await driver_say("धमाका सुना! लगता है पीछे का टायर फटा है। गाड़ी धीरे-धीरे बाएं किनारे लगाइए, हैज़र्ड लाइट जलाइए। "
                      "घबराइए मत, मैं सब संभाल रहा हूँ।", card="🛞 Tyre burst — pull over left, hazards on")
-    await asyncio.sleep(4)
+    await asyncio.sleep(0 if S.get("fast") else 4)
     tools = {t.name: t for t in drv.make_tools(v["id"], drv.Turn("पीछे का टायर फट गया"))}
     res = await tools["report_breakdown"].fn(problem="rear tyre burst (demo), truck loaded 18 t", severity="high")
     S["mesh_id"] = (res.get("peer_help") or {}).get("request_id")
