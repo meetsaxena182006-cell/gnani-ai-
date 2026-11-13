@@ -49,6 +49,9 @@ def seed(demo: bool = False) -> None:
             for dt, days in docs.items():
                 db.ex("INSERT INTO documents(vehicle_id,doc_type,expiry_date) VALUES(?,?,?)",
                       (vid, dt, (today + timedelta(days=days)).isoformat()))
+    # demo KYC for the Saarthi network (made-up GSTIN-format numbers)
+    db.ex("UPDATE fleets SET verified=1, gstin='08AAAAA0000A1Z5', rating=4.4, past_trips=36 WHERE code='MEWAR'")
+    db.ex("UPDATE fleets SET verified=1, gstin='24AAAAA0000A1Z5', rating=4.6, past_trips=48 WHERE code='SHREE'")
     if demo:
         _demo_state()
     print(f"Seeded {settings.db_path}")

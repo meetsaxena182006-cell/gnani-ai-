@@ -15,6 +15,7 @@
 """
 from __future__ import annotations
 
+import asyncio
 import logging
 import math
 import os
@@ -131,7 +132,7 @@ async def mark_site(v: dict, event: str, site: str = "") -> dict:
 
 
 # =============================== 2. PAYMENTS ===============================
-async def delivered(v: dict, receiver: str | None = None) -> dict:
+async def delivered(v: dict, receiver: str | None = None, find_backhaul: bool = True) -> dict:
     t = db.active_trip(v["id"])
     if not t:
         return {"error": "no active trip"}
@@ -150,6 +151,9 @@ async def delivered(v: dict, receiver: str | None = None) -> dict:
     await _owner(v, f"📦 Delivered — {v['reg_label']} {t['origin']} → {t['destination']}"
                     + (f", received by {receiver}" if receiver else "") + f". Balance due {inr(freight + detention - advance)}"
                     f" ({inr(freight)} freight + {inr(detention)} detention − {inr(advance)} advance). Waiting for POD photo.")
+    if find_backhaul:      # the truck is empty now: its agent looks for the next load on the network
+        from .agents import backhaul
+        asyncio.create_task(backhaul.match_empty(v))
     return {"say": "Badhai ho boss, delivery ho gayi! Gaadi khadi ho to bilty ya receiving ki ek photo le lijiye, "
                    "screen pe button hai. Usse paisa jaldi aayega.",
             "detention_open": bool(open_visit)}

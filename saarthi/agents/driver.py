@@ -341,6 +341,10 @@ def make_tools(vid: int, turn: Turn) -> list[Tool]:
         from .. import business
         return await business.delivered(v(), receiver)
 
+    async def find_next_load():
+        from . import backhaul
+        return await backhaul.match_empty(v())
+
     async def at_site(event: str):
         from .. import business
         return await business.mark_site(v(), event)
@@ -462,6 +466,8 @@ def make_tools(vid: int, turn: Turn) -> list[Tool]:
              params({"depart_in_hours": n, "relief_driver": {"type": "boolean"}}), plan_my_trip),
         Tool("delivered", "Driver says the goods are delivered/unloaded ('maal utar gaya', 'delivery ho gayi'). Starts "
              "the invoice; asks for a POD photo.", params({"receiver": s}), delivered),
+        Tool("find_next_load", "Truck is empty ('gaadi khaali hai', 'wapsi ka load', 'koi kaam dilao'): find, verify "
+             "(papers, payload, party legitimacy) and book the best nearby load from another fleet.", params({}), find_next_load),
         Tool("at_site", "Driver reached or left the loading/unloading point (for waiting-time / detention proof).",
              params({"event": {"type": "string", "enum": ["arrived", "left"]}}, ["event"]), at_site),
         Tool("set_eway_bill", "Save the trip's e-way bill number and validity (valid_until as ISO date-time, or distance_km "

@@ -88,3 +88,29 @@ def test_same_expense_said_once_is_queued_once(tmp_path, monkeypatch):
         await tools["log_entry"].fn(category="diesel", amount=21620, litres=235)
     asyncio.run(go())
     assert len(drv.pending_entries(v["id"])) == 1
+
+
+def test_empty_truck_agent_books_safe_load_and_rejects_bad_ones(tmp_path, monkeypatch):
+    import asyncio
+    from saarthi import db, seed
+    from saarthi.agents import backhaul
+    monkeypatch.setattr(db.settings, "db_path", str(tmp_path / "b.db"))
+    db._conn = None
+    seed.seed(demo=False)
+    v = db.vehicle_by_code("MW-T1")
+    db.ex("UPDATE vehicles SET last_lat=17.44, last_lon=78.50 WHERE id=?", (v["id"],))
+    shree = db.one("SELECT id FROM fleets WHERE code='SHREE'")["id"]
+    db.ex("INSERT INTO fleets(code,name,verified,rating,overdue_payments) VALUES('QUICK','Quick (demo)',0,2.0,2)")
+    quick = db.one("SELECT id FROM fleets WHERE code='QUICK'")["id"]
+    ins = ("INSERT INTO loads(fleet_id,origin,destination,o_lat,o_lon,d_lat,d_lon,weight_t,vtype,freight,status,urgent,created_at)"
+           " VALUES(?,?,?,?,?,?,?,?,?,?,'open',?,?)")
+    db.ex(ins, (quick, "Hyderabad", "Jaipur", 17.40, 78.48, 26.91, 75.79, 14, "truck_10w", 98000, 0, db.now()))
+    db.ex(ins, (shree, "Medchal", "Ahmedabad", 17.63, 78.48, 23.02, 72.57, 22, "truck_10w", 104000, 0, db.now()))
+    db.ex(ins, (shree, "Medchal", "Udaipur", 17.63, 78.48, 24.585, 73.712, 14, "truck_10w", 72000, 1, db.now()))
+    db.ex("UPDATE documents SET expiry_date='2099-01-01' WHERE vehicle_id=?", (v["id"],))
+    res = asyncio.run(backhaul.match_empty(v, notify=False))
+    assert res["booked"] and res["booked"]["route"] == "Medchal → Udaipur"
+    bad = {c["route"]: c["rejected_because"] for c in res["checked"] if not c["ok"]}
+    assert "poster not trustworthy" in bad["Hyderabad → Jaipur"]
+    assert "overloading" in bad["Medchal → Ahmedabad"]
+    assert db.active_trip(v["id"])["destination"] == "Udaipur"

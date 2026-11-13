@@ -313,6 +313,10 @@ def _fleet_tools(fleet_id: int) -> list[Tool]:
     async def take_load(load_id: int, vehicle_code: str):
         return await business.accept_load(load_id, find_vehicle(vehicle_code))
 
+    async def fill_empty_truck(vehicle_code: str):
+        from . import backhaul
+        return await backhaul.match_empty(find_vehicle(vehicle_code))
+
     from .. import planner
 
     async def plan_trip(origin: str, destination: str, vehicle_code: str | None = None, vtype: str | None = None,
@@ -368,6 +372,10 @@ def _fleet_tools(fleet_id: int) -> list[Tool]:
              post_load),
         Tool("find_return_loads", "Loads starting near a truck's destination, with estimated profit.",
              params({"vehicle_code": s}, ["vehicle_code"]), find_return_loads),
+        Tool("fill_empty_truck", "A truck is empty / just delivered: find the nearest other-fleet load (urgent overflow "
+             "first), check the truck's papers, payload and the poster's legitimacy, and book the best safe one. Use for "
+             "'gaadi khaali hai', 'koi load dilao', 'empty truck'.", params({"vehicle_code": s}, ["vehicle_code"]),
+             fill_empty_truck),
         Tool("take_load", "Take a load from the Saarthi network for a truck.",
              params({"load_id": {"type": "integer"}, "vehicle_code": s}, ["load_id", "vehicle_code"]), take_load),
         Tool("watch_report", "What the watchdog saw: tolls crossed/unreported, long stops, overspeed, route deviation, "

@@ -6,6 +6,8 @@ from __future__ import annotations
 
 import math
 
+import os
+
 import httpx
 
 from .config import settings
@@ -112,6 +114,11 @@ async def route(o_lat: float, o_lon: float, d_lat: float, d_lon: float) -> dict:
             fallback_reason = ""
     else:
         fallback_reason = "no GOOGLE_MAPS_API_KEY"
+    if os.getenv("TOMTOM_API_KEY"):          # free tier (2,500 requests/day): live traffic, truck routing
+        try:
+            return await _tomtom_route(o_lat, o_lon, d_lat, d_lon)
+        except Exception as e:
+            fallback_reason = f"TomTom failed: {e}"
     res = await _osrm_route(o_lat, o_lon, d_lat, d_lon)
     res["traffic"] = f"not available ({fallback_reason})"
     return res
@@ -164,6 +171,29 @@ async def _google_route(o_lat, o_lon, d_lat, d_lon) -> dict:
             "traffic_delay_min": round((dur - static) / 60),
         })
     return {"source": "Google Routes (traffic-aware)", "routes": routes, "traffic": "live"}
+
+
+async def _tomtom_route(o_lat, o_lon, d_lat, d_lon) -> dict:
+    url = f"https://api.tomtom.com/routing/1/calculateRoute/{o_lat},{o_lon}:{d_lat},{d_lon}/json"
+    params = {"key": os.getenv("TOMTOM_API_KEY"), "traffic": "true", "travelMode": "truck", "maxAlternatives": 1,
+              "computeTravelTimeFor": "all", "routeRepresentation": "polyline"}
+    async with httpx.AsyncClient(timeout=TIMEOUT) as c:
+        r = await c.get(url, params=params)
+        r.raise_for_status()
+        js = r.json()
+    routes = []
+    for rt in js.get("routes", []):
+        sm = rt["summary"]
+        coords = [(p["latitude"], p["longitude"]) for leg in rt.get("legs", []) for p in leg.get("points", [])]
+        routes.append({
+            "distance_km": round(sm["lengthInMeters"] / 1000, 1),
+            "duration_h": round(sm["travelTimeInSeconds"] / 3600, 1),
+            "truck_duration_h": round(sm["travelTimeInSeconds"] / 3600, 1),
+            "traffic_delay_min": round(sm.get("trafficDelayInSeconds", 0) / 60),
+            "sample_points": [coords[int(i * (len(coords) - 1) / 4)] for i in range(5)] if coords else [],
+            "_coords": coords,
+        })
+    return {"source": "TomTom (live traffic, truck routing)", "routes": routes, "traffic": "live"}
 
 
 def _sample(coords: list[list[float]], n: int) -> list[tuple[float, float]]:

@@ -22,13 +22,15 @@ from .config import settings
 log = logging.getLogger("saarthi.film")
 
 DIR = os.path.join(os.path.dirname(settings.db_path) or ".", "film")
+# a prepared film shipped with the code: survives restarts/redeploys of free hosting (made with Gnani Timbre on the server)
+BUNDLED = os.path.join(os.path.dirname(__file__), "static", "film_data")
 F: dict = {"status": "idle", "progress": "", "error": None, "timeline": None, "task": None}
 _audio: dict[int, bytes] = {}
 
 # role -> Gnani Timbre voices to try (first that works wins)
 VOICE_TRY = {"saarthi": ["Poorvi", "Suhana", "Veera"], "driver": ["Zayan", "Ishaan", "Kavin", "Riyaan", "Pranav"],
              "ceo": ["Pranav", "Dhruva"], "owner": ["Riyaan", "Kavin", "Dhruva", "Ishaan"],
-             "helper": ["Kavin", "Ishaan", "Dhruva"], "saarthi_te": ["Suhana", "Poorvi"]}
+             "helper": ["Kavin", "Ishaan", "Dhruva"], "partner": ["Dhruva", "Ishaan", "Kavin"], "saarthi_te": ["Suhana", "Poorvi"]}
 LANG = {"saarthi_te": "te-IN"}
 # regional language moment (driver switches Saarthi's language with the picker on the phone)
 TELUGU = (12, "తెలంగాణకు స్వాగతం రమేష్ భాయ్! మీరు భాష మార్చారు — ఇప్పటినుంచి నేను తెలుగులో మాట్లాడతాను. "
@@ -119,7 +121,7 @@ async def _capture() -> list[dict]:
             F["progress"] = f"capturing {i + 1}/{len(scenario.STEPS)}: {title}"
             events.append({"kind": "step", "step": i, "text": title})
             try:
-                await fn()
+                await scenario.run_step(i)
             except Exception as e:
                 log.exception("film step failed")
                 events.append(_stamp({"kind": "note", "text": f"⚠️ step failed: {e}"}))
@@ -233,6 +235,8 @@ def start() -> dict:
 def timeline() -> dict | None:
     if F["timeline"] is None:
         p = os.path.join(DIR, "timeline.json")
+        if not os.path.exists(p):
+            p = os.path.join(BUNDLED, "timeline.json")
         if os.path.exists(p):
             with open(p, encoding="utf-8") as fh:
                 F["timeline"] = json.load(fh)
@@ -243,6 +247,8 @@ def timeline() -> dict | None:
 def audio(n: int) -> bytes | None:
     if n not in _audio:
         p = os.path.join(DIR, f"{n:03d}.ogg")
+        if not os.path.exists(p) or not os.path.exists(os.path.join(DIR, "timeline.json")):
+            p = os.path.join(BUNDLED, f"{n:03d}.ogg")
         if os.path.exists(p):
             with open(p, "rb") as fh:
                 _audio[n] = fh.read()

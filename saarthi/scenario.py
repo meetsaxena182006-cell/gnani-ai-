@@ -23,7 +23,7 @@ log = logging.getLogger("saarthi.scenario")
 HERO, HELPER = "MW-T1", "SG-T1"
 DEST = (17.4400, 78.5000)
 CLIENT = "Deccan Stone Traders (demo)"
-CARGO = "18 टन मार्बल स्लैब (demo)"
+CARGO = "15 टन मार्बल स्लैब (demo)"
 FREIGHT, ADVANCE = 118000, 30000
 
 # demo route (approximate highway towns): NH27/NH52 to Indore, NH753 via Burhanpur-Akola, NH161 Nanded, NH44 Hyderabad
@@ -194,7 +194,8 @@ def expense(cat: str, amount: float, note_: str, litres: float | None = None) ->
 
 def money() -> dict:
     v = hero()
-    t = db.active_trip(v["id"]) or db.one("SELECT * FROM trips WHERE vehicle_id=? ORDER BY id DESC LIMIT 1", (v["id"],))
+    t = (db.one("SELECT * FROM trips WHERE id=?", (S["trip_id"],)) if S.get("trip_id") else None) or db.active_trip(v["id"]) \
+        or db.one("SELECT * FROM trips WHERE vehicle_id=? ORDER BY id DESC LIMIT 1", (v["id"],))
     rows = db.q("SELECT category, SUM(amount) s FROM expenses WHERE trip_id=? AND status='confirmed' GROUP BY category", (t["id"],))
     m = {r["category"]: round(r["s"] or 0) for r in rows}
     spent = sum(val for k, val in m.items() if k not in ("freight_advance", "freight"))
@@ -251,6 +252,7 @@ async def s_setup():
     la, lo = _point(0)
     await fatigue.location_update(v["id"], la, lo, 0)
     t = db.start_trip(v["id"], "Udaipur", "Hyderabad", FREIGHT, CLIENT)
+    S["trip_id"] = t["id"]
     db.ex("UPDATE trips SET origin_lat=?, origin_lon=?, dest_lat=?, dest_lon=?, eway_bill='EWB-DEMO-TS-4401', "
           "eway_valid_until=? WHERE id=?", (la, lo, DEST[0], DEST[1],
           (datetime.now(timezone.utc) + timedelta(days=6)).isoformat(timespec="minutes"), t["id"]))
@@ -262,7 +264,7 @@ async def s_setup():
     note(f"Demo trip ready: {v['reg_label']} Udaipur → Hyderabad, {total_km():.0f} km demo route")
     await ceo_tell(f"🆕 New trip (demo): {v['reg_label']} · Udaipur → Hyderabad · {CARGO} · client {CLIENT} · "
                    f"freight {inr(FREIGHT)} · advance {inr(ADVANCE)} received · e-way bill EWB-DEMO-TS-4401.",
-                   speak=f"मालिक, नया ट्रिप लग गया है। RJ00 DEMO 01 उदयपुर से हैदराबाद जाएगी, अठारह टन मार्बल, "
+                   speak=f"मालिक, नया ट्रिप लग गया है। RJ00 DEMO 01 उदयपुर से हैदराबाद जाएगी, पंद्रह टन मार्बल, "
                          f"भाड़ा एक लाख अठारह हज़ार, तीस हज़ार एडवांस आ गया है।")
 
 
@@ -380,7 +382,7 @@ async def s_breakdown():
                      "घबराइए मत, मैं सब संभाल रहा हूँ।", card="🛞 Tyre burst — pull over left, hazards on")
     await asyncio.sleep(0 if S.get("fast") else 4)
     tools = {t.name: t for t in drv.make_tools(v["id"], drv.Turn("पीछे का टायर फट गया"))}
-    res = await tools["report_breakdown"].fn(problem="rear tyre burst (demo), truck loaded 18 t", severity="high")
+    res = await tools["report_breakdown"].fn(problem="rear tyre burst (demo), truck loaded 15 t", severity="high")
     S["mesh_id"] = (res.get("peer_help") or {}).get("request_id")
     if res.get("say"):
         await driver_say(res["say"])
@@ -440,18 +442,11 @@ async def s_papers():
 
 async def s_client_call():
     await drive_to(km_of("Bhainsa"), 8)
-    note("Telangana entered · client asked ETA → Saarthi answered & office updated; owner offers return load")
+    note("Telangana entered · client asked ETA → Saarthi answered automatically & office updated")
     await driver_say("तेलंगाना में स्वागत है! क्लाइंट Deccan Stone का फ़ोन आया था ETA पूछने — मैंने मैसेज भेज दिया: "
                      f"कल {eta_text()} तक पहुँचेंगे, अनलोडिंग के लिए चार मज़दूर तैयार रखें। आप बस आराम से चलाइए।")
-    await ceo_tell(f"📞 Client {CLIENT} asked for ETA — replied automatically: {eta_text()}. "
-                   "🔁 Return load found: Hyderabad → Udaipur, granite 16 t, ₹64,000 (demo, Shree Ganesh Transport). "
-                   "Say 'accept' to book it.",
-                   speak="मालिक, वापसी का लोड भी मिल गया — हैदराबाद से उदयपुर, चौंसठ हज़ार। बोलें तो बुक कर दूँ?")
-    shree = db.one("SELECT * FROM fleets WHERE code='SHREE'")
-    if shree and not db.one("SELECT id FROM loads WHERE origin='Hyderabad' AND status='open'"):
-        db.ex("INSERT INTO loads(fleet_id,origin,destination,o_lat,o_lon,d_lat,d_lon,weight_t,vtype,freight,status,created_at) "
-              "VALUES(?, 'Hyderabad', 'Udaipur', ?, ?, 24.585, 73.712, 16, 'truck_10w', 64000, 'open', ?)",
-              (shree["id"], DEST[0], DEST[1], db.now()))
+    await ceo_tell(f"📞 Client {CLIENT} asked for ETA — replied automatically: {eta_text()}. Unloading crew requested.",
+                   speak="मालिक, क्लाइंट ने पहुँचने का समय पूछा था, मैंने बता दिया और अनलोडिंग के मज़दूर भी तैयार करवा दिए।")
 
 
 async def s_arrive():
@@ -460,7 +455,7 @@ async def s_arrive():
     await stop_here()
     v = hero()
     await business.mark_site(v, "arrived", "unloading: Hyderabad (demo warehouse)")
-    res = await business.delivered(v, "Venkat (demo), Deccan Stone Traders")
+    res = await business.delivered(v, "Venkat (demo), Deccan Stone Traders", find_backhaul=False)
     m = money()
     S["final"] = m
     note(f"Delivered at Hyderabad · POD requested · trip spend {inr(m['spent'])} · gross margin {inr(m['profit'])}")
@@ -476,13 +471,74 @@ async def s_arrive():
     return res
 
 
+async def s_backhaul():
+    from .agents import backhaul
+    v = hero()
+    shree = db.one("SELECT * FROM fleets WHERE code='SHREE'")
+    quick = db.one("SELECT * FROM fleets WHERE code='QUICK'")
+    if not quick:     # a poster with no KYC and unpaid dues: the agent must refuse it even though it pays more
+        db.ex("INSERT INTO fleets(code,name,diesel_price,verified,rating,overdue_payments) "
+              "VALUES('QUICK','Quick Cargo Movers (demo, unverified)',92,0,2.1,2)")
+        quick = db.one("SELECT * FROM fleets WHERE code='QUICK'")
+    db.ex("UPDATE loads SET status='closed' WHERE status='open' AND o_lat BETWEEN 16.5 AND 18.5 AND o_lon BETWEEN 77.5 AND 79.5")
+    ins = ("INSERT INTO loads(fleet_id,origin,destination,o_lat,o_lon,d_lat,d_lon,weight_t,vtype,freight,status,urgent,need,"
+           "created_at) VALUES(?,?,?,?,?,?,?,?,?,?, 'open', ?, ?, ?)")
+    db.ex(ins, (quick["id"], "Hyderabad", "Jaipur", 17.40, 78.48, 26.912, 75.787, 14, "truck_10w", 98000, 0,
+                "cash on delivery (demo)", db.now()))
+    db.ex(ins, (shree["id"], "Medchal (Hyderabad)", "Ahmedabad", 17.63, 78.48, 23.0225, 72.5714, 22, "truck_10w", 104000, 0,
+                "granite 22 t (demo)", db.now()))
+    db.ex(ins, (shree["id"], "Medchal (Hyderabad)", "Udaipur", 17.63, 78.48, 24.585, 73.712, 14, "truck_10w", 72000, 1,
+                "URGENT: our truck SG-T2 broke down, granite must leave today (demo)", db.now()))
+    # the PUC renewal the CEO booked is done after unloading (so the truck's papers cover the next trip)
+    db.ex("UPDATE documents SET expiry_date=? WHERE vehicle_id=? AND doc_type='PUC'",
+          ((datetime.now().date() + timedelta(days=180)).isoformat(), v["id"]))
+    note("PUC renewed at Hyderabad after unloading (booked earlier by the CEO Agent) → papers valid for the next trip")
+    res = await backhaul.match_empty(v, notify=False)
+    S["backhaul"] = res
+    chk = res.get("checked", [])
+    lines = " · ".join(f"{c['route']} {inr(c['freight'])} → {'✅ safe' if c['ok'] else '❌ ' + (c['rejected_because'] or '')}"
+                       for c in chk)
+    note(f"Empty truck → agent checked {len(chk)} nearby loads from other fleets: {lines}")
+    b = res.get("booked")
+    if not b:
+        await driver_say("अभी आस-पास कोई सही लोड नहीं मिला, मैं ढूँढता रहूँगा।")
+        return
+    if S.get("film") is not None:
+        S["film"].append({"kind": "partner", "text": b["reply"], "speak": "हाँ, मंज़ूर है। आपकी गाड़ी के कागज़ और पार्टी "
+                          "की जाँच हो गई है। मेडचल में ग्रेनाइट तैयार है, लोडिंग वाले ड्राइवर को फ़ोन करेंगे।",
+                          "step": S["step"] + 1, "km": round(S["km"], 1)})
+    await driver_say(f"रमेश भाई, गाड़ी खाली नहीं लौटेगी! श्री गणेश ट्रांसपोर्ट का ट्रक ख़राब हो गया था, उनका ग्रेनाइट आज ही "
+                     f"निकलना है — मेडचल से उदयपुर, चौदह टन, भाड़ा बहत्तर हज़ार। पिकअप बस {b['pickup_km']} किलोमीटर पे है। "
+                     "एक पार्टी ज़्यादा पैसे दे रही थी, पर उसका रिकॉर्ड ख़राब था और KYC नहीं था, इसलिए मना कर दिया। "
+                     "बाईस टन वाला लोड भी छोड़ा — गाड़ी सोलह टन की है, ओवरलोडिंग नहीं करेंगे। सब कागज़ चेक हो गए हैं।",
+                     card=f"🔁 Next load booked: {b['route']} · {b['weight_t']:g} t · {inr(b['freight'])} · pickup {b['pickup_km']} km")
+    await ceo_tell(f"🔁 Empty-truck agent: MW-T1 booked for {b['posted_by']}'s urgent load {b['route']}, {b['weight_t']:g} t, "
+                   f"{inr(b['freight'])}, est. profit {inr(b['profit'] or 0)}. Papers valid for the trip ({', '.join(b['papers'])}); "
+                   f"poster: {', '.join(b['legit'][:4])}. Rejected: Quick Cargo (no KYC, 2 overdue payments) and a 22 t load "
+                   f"(over payload). No empty return kilometres.",
+                   speak="मालिक, गाड़ी खाली वापस नहीं आएगी — श्री गणेश का अर्जेंट लोड मिल गया, मेडचल से उदयपुर, बहत्तर हज़ार। "
+                         "कागज़ और पार्टी दोनों की जाँच करके बुक किया है।")
+
+
 STEPS = [("Trip assigned (CEO → driver)", s_setup), ("Route plan: tolls, diesel, rests, ETA", s_brief),
          ("Depart · live location · FASTag tolls", s_depart), ("Fuel stop (driver says diesel by voice)", s_fuel),
          ("Diesel logged → CEO", s_fuel_done), ("Traffic jam → reroute", s_traffic), ("Heavy rain warning", s_weather),
          ("Fatigue → rest at dhaba", s_rest), ("EMERGENCY: tyre burst", s_breakdown),
          ("Agent-to-agent help (other fleet)", s_mesh_help), ("Repaired, back on road", s_repaired),
-         ("Papers + border check", s_papers), ("Client ETA call + return load", s_client_call),
-         ("Arrive Hyderabad · delivery · POD · P&L", s_arrive)]
+         ("Papers + border check", s_papers), ("Client ETA call", s_client_call),
+         ("Arrive Hyderabad · delivery · POD · P&L", s_arrive),
+         ("Empty truck → next load (agent-to-agent, papers checked)", s_backhaul)]
+
+
+async def run_step(i: int) -> None:
+    """Demo map/weather/traffic only while a demo step runs; live data the rest of the time."""
+    if not _route:
+        _build_route()
+    _install_demo_world()
+    try:
+        await STEPS[i][1]()
+    finally:
+        _remove_demo_world()
 
 
 async def next_step() -> dict:
@@ -493,7 +549,7 @@ async def next_step() -> dict:
         return state()
     S["running"] = True
     try:
-        await STEPS[i][1]()
+        await run_step(i)
         S["step"] = i
     except Exception as e:
         log.exception("scenario step failed")

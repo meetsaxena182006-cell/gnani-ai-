@@ -21,8 +21,13 @@ shows "Prepare film again" (office key, ~4 min). **Everything in the demo trip i
 **Film mode covers:** trip assignment by the CEO Agent, route plan (NHAI toll plazas, diesel, rest stops, ETA), live location
 on the map, FASTag toll auto-logging, fuel stop + diesel reported by voice (live AI confirms and saves it), traffic jam re-route,
 heavy-rain warning, fatigue rest at a dhaba, tyre burst → breakdown flow → agent-to-agent help from another fleet's truck,
-repair cost logging, papers / PUC renewal before a border check, client ETA call + return load offer, language switch to
-Telugu, delivery + POD + trip P&L, and the owner asking the CEO Agent for profit (live AI answer).
+repair cost logging, papers / PUC renewal before a border check, client ETA call, language switch to Telugu, delivery + POD + trip P&L, the owner asking the CEO Agent for profit
+(live AI answer), and the **empty-truck agent**: after unloading it finds another fleet's urgent overflow load nearby,
+checks the truck's papers and payload and the poster's legitimacy (KYC, GSTIN, track record, overdue payments), rejects
+unsafe offers and books the best safe one, so the truck never returns empty.
+
+**Live data:** OpenStreetMap / OSRM routes, Open-Meteo weather, Overpass (mechanics, fuel, dhabas), NHAI toll plazas.
+Live traffic: set `TOMTOM_API_KEY` (free tier, 2,500 requests/day) or `GOOGLE_MAPS_API_KEY`.
 
 ## What it does
 

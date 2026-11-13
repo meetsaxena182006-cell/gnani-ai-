@@ -28,6 +28,19 @@ async def _fatigue_loop() -> None:
                 logging.exception("%s failed", job.__module__)
 
 
+async def _keep_awake() -> None:
+    """Free hosting sleeps after 15 min without visitors: ping our own public URL so judges never wait for a cold start."""
+    import httpx
+    url = settings.public_base_url + "/health"
+    while True:
+        await asyncio.sleep(600)
+        try:
+            async with httpx.AsyncClient(timeout=20) as c:
+                await c.get(url)
+        except Exception as e:
+            logging.warning("keep-awake ping failed: %s", e)
+
+
 def check_config() -> list[str]:
     problems = []
     if settings.speech_mode == "gnani" and not settings.gnani_api_key:
@@ -54,6 +67,8 @@ async def amain() -> None:
         db.ex("UPDATE fleets SET owner_chat_id=900000+id WHERE owner_chat_id IS NULL")
         db.ex("UPDATE vehicles SET driver_chat_id=910000+id WHERE driver_chat_id IS NULL")
     asyncio.create_task(_fatigue_loop())
+    if os.getenv("KEEP_AWAKE", "1" if "onrender.com" in settings.public_base_url else "0") == "1":
+        asyncio.create_task(_keep_awake())
     if os.getenv("DEMO_DRIVE", "0") == "1":   # a SIMULATED truck drives NH48 so the CEO has something to watch
         from . import demo_drive
         asyncio.create_task(demo_drive.drive_forever())

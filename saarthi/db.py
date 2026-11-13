@@ -117,9 +117,12 @@ def _migrate(c: sqlite3.Connection) -> None:
                         "origin_lon": "REAL", "eway_bill": "TEXT", "eway_valid_until": "TEXT", "delivered_at": "TEXT",
                         "weight_t": "REAL"},
               "fleets": {"detention_free_h": "REAL DEFAULT 4", "detention_per_day": "REAL DEFAULT 1500",
-                         "payment_terms_days": "INTEGER DEFAULT 30"},
+                         "payment_terms_days": "INTEGER DEFAULT 30", "verified": "INTEGER DEFAULT 0",
+                         "gstin": "TEXT", "rating": "REAL DEFAULT 0", "past_trips": "INTEGER DEFAULT 0",
+                         "overdue_payments": "INTEGER DEFAULT 0"},
               "toll_crossings": {"asks": "INTEGER DEFAULT 1"},
-              "expenses": {"odometer_km": "REAL"}}
+              "expenses": {"odometer_km": "REAL"},
+              "loads": {"urgent": "INTEGER DEFAULT 0", "need": "TEXT"}}
     for table, cols in wanted.items():
         have = {r[1] for r in c.execute(f"PRAGMA table_info({table})")}
         for col, typ in cols.items():
