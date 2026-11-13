@@ -145,7 +145,11 @@ async def _capture() -> list[dict]:
                             reply = await asyncio.wait_for(drv.handle(v, q), 45)
                         else:
                             reply = await asyncio.wait_for(_owner_voice_answer(db.fleet(v["fleet_id"]), q), 60)
-                        ok = bool(reply) and FAIL_TEXT not in reply and (not must or must in reply.replace(" ", " "))
+                        flat = (reply or "").replace(" ", " ")
+                        ok = bool(reply) and FAIL_TEXT not in reply and (not must or must in flat)
+                        # any extra claim about the PUC must match the data (expires in 4 days at this point of the story)
+                        if ok and who == "owner" and "PUC" in flat and not re.search(r"(4|चार)\s*(दिन|din|day)", flat):
+                            ok = False
                         if ok:
                             break
                         await asyncio.sleep(4)
