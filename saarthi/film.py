@@ -148,7 +148,7 @@ async def _capture() -> list[dict]:
                         flat = (reply or "").replace(" ", " ")
                         ok = bool(reply) and FAIL_TEXT not in reply and (not must or must in flat)
                         # any extra claim about the PUC must match the data (expires in 4 days at this point of the story)
-                        if ok and who == "owner" and "PUC" in flat and not re.search(r"(4|चार)\s*(दिन|din|day)", flat):
+                        if ok and who == "owner" and "PUC" in flat and not re.search(r"(4|चार)\s*(दिन|din|day)", flat):
                             ok = False
                         if ok:
                             break
