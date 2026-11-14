@@ -352,7 +352,46 @@ async def forecast_hourly(lat: float, lon: float, days: int = 3) -> dict:
     """Raw hourly forecast (IST) for a point: used by the trip planner to test many departure times offline."""
     params = {"latitude": lat, "longitude": lon, "timezone": "Asia/Kolkata", "forecast_days": days,
               "hourly": "precipitation_probability,precipitation,visibility,weather_code,temperature_2m,wind_speed_10m"}
-    return await _meteo(params)
+    try:
+        return await _meteo(params)
+    except Exception:
+        return await _met_norway_hourly(lat, lon)
+
+
+_met_hourly_cache: dict = {}
+
+
+async def _met_norway_hourly(lat: float, lon: float) -> dict:
+    """Backup hourly forecast from MET Norway (free, no key), shaped like Open-Meteo's 'hourly' block (IST times)."""
+    import time as _t
+    from datetime import datetime as _dt, timedelta as _td
+    k = (round(lat, 2), round(lon, 2))
+    hit = _met_hourly_cache.get(k)
+    if hit and _t.time() - hit[0] < 1800:
+        return hit[1]
+    async with httpx.AsyncClient(headers={"User-Agent": "saarthi-fleet-demo/1.0 github.com/meetsaxena182006-cell/gnani-ai-"},
+                                 timeout=httpx.Timeout(8.0)) as c:
+        r = await c.get("https://api.met.no/weatherapi/locationforecast/2.0/compact",
+                        params={"lat": round(lat, 3), "lon": round(lon, 3)})
+        r.raise_for_status()
+        series = r.json()["properties"]["timeseries"]
+    h = {"time": [], "precipitation": [], "weather_code": [], "temperature_2m": [], "wind_speed_10m": [],
+         "visibility": [], "precipitation_probability": []}
+    for row in series[:72]:
+        t = _dt.fromisoformat(row["time"].replace("Z", "+00:00")) + _td(hours=5, minutes=30)
+        det = row["data"]["instant"]["details"]
+        nxt = row["data"].get("next_1_hours") or row["data"].get("next_6_hours") or {}
+        code = next((cc for kk, cc in _MET_CODE if kk in (nxt.get("summary") or {}).get("symbol_code", "")), 1)
+        h["time"].append(t.strftime("%Y-%m-%dT%H:00"))
+        h["precipitation"].append((nxt.get("details") or {}).get("precipitation_amount", 0))
+        h["weather_code"].append(code)
+        h["temperature_2m"].append(det.get("air_temperature"))
+        h["wind_speed_10m"].append(round((det.get("wind_speed") or 0) * 3.6, 1))
+        h["visibility"].append(500 if code == 45 else None)
+        h["precipitation_probability"].append(None)
+    js = {"hourly": h, "source": "MET Norway"}
+    _met_hourly_cache[k] = (_t.time(), js)
+    return js
 
 
 async def overpass_along(points: list[tuple[float, float]], kinds: tuple[str, ...] = ("fuel", "dhaba"),
