@@ -105,6 +105,28 @@ def route_reply(plan: dict, q: dict, label: str, hi: bool) -> str:
 
 
 _plan_memo: dict = {}
+_TRACK = re.compile(r"(track|ट्रैक|tracking|ट्रैकिंग|लिंक|link|eta|kahan hai|कहाँ है|कहां है|location)", re.I)
+
+
+def owner_tracking(fleet: dict, text: str) -> str | None:
+    """Client tracking link straight from the database (an AI must never type a token: it can invent one)."""
+    from .config import settings
+    m = _VEH.search(text)
+    if not m:
+        return None
+    v = db.one("SELECT * FROM vehicles WHERE fleet_id=? AND UPPER(code)=?", (fleet["id"], m.group(1).upper()))
+    if not v:
+        return None
+    t = db.active_trip(v["id"])
+    hi = _hindi(text)
+    if not t:
+        return (f"{v['code']} अभी किसी ट्रिप पर नहीं है, इसलिए ट्रैकिंग लिंक नहीं बन सकता।" if hi else
+                f"{v['code']} is not on a trip right now, so there is no tracking link.")
+    link = f"{settings.public_base_url}/track/{t['track_token']}"
+    return (f"{v['code']} ({t['origin']} → {t['destination']}) का लाइव ट्रैकिंग लिंक: {link} — क्लाइंट को भेज दीजिए, "
+            f"इसमें सिर्फ़ इस ट्रिप की लाइव पोज़ीशन दिखेगी।" if hi else
+            f"Live tracking for {v['code']} ({t['origin']} → {t['destination']}): {link} — share it with the client; "
+            f"it shows only this trip's live position.")
 
 
 def owner_papers(fleet: dict, hi: bool) -> str:
@@ -139,6 +161,10 @@ async def owner_fast(fleet: dict, text: str) -> str | None:
     import os
     if os.getenv("FASTLANE", "1") != "1":
         return None
+    if _TRACK.search(text):
+        out = owner_tracking(fleet, text)
+        if out:
+            return out
     q = parse_route(text)
     if not q:
         if _PAPERS.search(text) and not _cities_in(text):

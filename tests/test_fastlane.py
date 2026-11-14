@@ -60,3 +60,13 @@ async def test_owner_papers_fast(fresh):
     f = dict(db.one("SELECT * FROM fleets WHERE code='MEWAR'"))
     out = await fastlane.owner_fast(f, "किस गाड़ी के कागज़ जल्दी ख़त्म हो रहे हैं?")
     assert out and "MW-T" in out
+
+
+async def test_tracking_link_comes_from_the_database(fresh):
+    from saarthi import db
+    f = dict(db.one("SELECT * FROM fleets WHERE code='MEWAR'"))
+    v = db.one("SELECT * FROM vehicles WHERE code='MW-T1'")
+    t = db.active_trip(v["id"]) or db.start_trip(v["id"], "Udaipur", "Ahmedabad", 38000, "Demo")
+    t = db.active_trip(v["id"])
+    out = await fastlane.owner_fast(f, "MW-T1 का ट्रैकिंग लिंक भेजो")
+    assert f"/track/{t['track_token']}" in out

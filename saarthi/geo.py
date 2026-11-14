@@ -198,6 +198,23 @@ async def nearby(kind: str, lat: float, lon: float, radius_m: int = 15000, limit
 _places_good: dict = {}
 
 
+def _load_places_seed() -> None:
+    """Real OpenStreetMap results for the demo trucks' spots, saved in the repo: a fresh server can name the
+    nearest mechanic / dhaba at once even while the public map servers are busy. Live searches replace them."""
+    import json as _json
+    import time as _t
+    from pathlib import Path
+    f = Path(__file__).resolve().parent.parent / "data" / "places_seed.json"
+    try:
+        for k, v in _json.loads(f.read_text(encoding="utf-8")).items():
+            _places_good.setdefault(k, (_t.time() - 3600, v))
+    except Exception:
+        pass
+
+
+_load_places_seed()
+
+
 def rank_places(elements: list[dict], lat: float, lon: float, limit: int = 5) -> list[dict]:
     out = []
     for e in elements:
