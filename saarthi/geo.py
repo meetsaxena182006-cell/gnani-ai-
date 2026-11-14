@@ -74,10 +74,28 @@ def build_overpass_query(kind: str, lat: float, lon: float, radius_m: int) -> st
     return f"[out:json][timeout:20];({body});out center 30;"
 
 
+OVERPASS = ["https://overpass-api.de/api/interpreter", "https://overpass.kumi.systems/api/interpreter",
+            "https://overpass.private.coffee/api/interpreter", "https://maps.mail.ru/osm/tools/overpass/api/interpreter"]
+
+
+async def _overpass(c, query: str):
+    """POST to the first Overpass mirror that answers."""
+    err = None
+    for url in OVERPASS:
+        try:
+            r = await c.post(url, data={"data": query}, headers={"User-Agent": "saarthi-fleet-demo/1.0"})
+            if r.status_code == 200 and r.text.lstrip().startswith("{"):
+                return r
+            err = RuntimeError(f"{url} HTTP {r.status_code}")
+        except Exception as e:
+            err = e
+    raise err
+
+
 async def nearby(kind: str, lat: float, lon: float, radius_m: int = 15000, limit: int = 5) -> list[dict]:
     query = build_overpass_query(kind, lat, lon, radius_m)
     async with httpx.AsyncClient(headers=UA, timeout=TIMEOUT) as c:
-        r = await c.post("https://overpass-api.de/api/interpreter", data={"data": query})
+        r = await _overpass(c, query)
         r.raise_for_status()
         elements = r.json().get("elements", [])
     return rank_places(elements, lat, lon, limit)
@@ -243,7 +261,7 @@ async def overpass_along(points: list[tuple[float, float]], kinds: tuple[str, ..
     tags = [t for k in kinds for t in HELP_TAGS[k]]
     body = "".join(f"{t}(around:{radius_m},{lat},{lon});" for lat, lon in points for t in tags)
     async with httpx.AsyncClient(headers=UA, timeout=httpx.Timeout(40.0)) as c:
-        r = await c.post("https://overpass-api.de/api/interpreter", data={"data": f"[out:json][timeout:35];({body});out center 200;"})
+        r = await _overpass(c, f"[out:json][timeout:35];({body});out center 200;")
         r.raise_for_status()
         elements = r.json().get("elements", [])
     out = []

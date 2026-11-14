@@ -16,6 +16,7 @@ empty kilometres, more paid work for small fleets.
 from __future__ import annotations
 
 import logging
+import os
 import re
 from datetime import date, timedelta
 
@@ -108,12 +109,71 @@ def candidates(v: dict, lat: float, lon: float) -> list[dict]:
     # urgent help first, then profit
     return sorted(out, key=lambda c: (not c["ok"], not c["urgent"], -(c["profit"].get("profit") or 0)))
 
+# ---------------- demo load market (synthetic, so the live link always has work to match) ----------------
+CITIES = [("Udaipur", 24.585, 73.712), ("Ahmedabad", 23.0225, 72.5714), ("Jaipur", 26.912, 75.787),
+          ("Indore", 22.7196, 75.8577), ("Surat", 21.1702, 72.8311), ("Mumbai (Bhiwandi)", 19.2813, 73.0483),
+          ("Delhi (Kundli)", 28.8747, 77.1068), ("Hyderabad", 17.385, 78.4867), ("Pune", 18.5204, 73.8567),
+          ("Kota", 25.2138, 75.8648), ("Vadodara", 22.3072, 73.1812), ("Bhopal", 23.2599, 77.4126)]
+GOODS = ["marble slabs", "granite blocks", "cement bags", "tiles", "cotton bales", "steel coils", "FMCG cartons"]
+
+
+def _quick_fleet() -> dict:
+    q = db.one("SELECT * FROM fleets WHERE code='QUICK'")
+    if not q:   # a poster with no KYC and unpaid dues: the agent must refuse it even though it pays more
+        db.ex("INSERT INTO fleets(code,name,diesel_price,verified,rating,overdue_payments) "
+              "VALUES('QUICK','Quick Cargo Movers (demo, unverified)',92,0,2.1,2)")
+        q = db.one("SELECT * FROM fleets WHERE code='QUICK'")
+    return q
+
+
+def ensure_market(v: dict) -> int:
+    """DEMO only (DEMO_MARKET=0 turns it off): if no other fleet has posted work near this empty truck, post three
+    synthetic loads near it - one safe & urgent, one from an untrustworthy poster, one too heavy - so anyone
+    testing the live link sees the agent check papers and legitimacy for real. Returns loads added."""
+    import random
+    if os.getenv("DEMO_MARKET", "1") != "1" or v.get("last_lat") is None:
+        return 0
+    lat, lon = v["last_lat"], v["last_lon"]
+    prof = costing.PROFILES.get(v["vtype"])
+    cap = prof.payload_tonnes if prof else 10
+    others = [f for f in db.q("SELECT * FROM fleets WHERE verified=1 AND id<>?", (v["fleet_id"],))]
+    if not others:
+        return 0
+    ids = {f["id"] for f in others}
+    fits = [l for l in business.loads_near(lat, lon, exclude_fleet=v["fleet_id"], radius_km=SEARCH_KM)
+            if l["fleet_id"] in ids and (l.get("weight_t") or 0) <= cap and l.get("vtype") in (None, "", v["vtype"])]
+    if fits:      # real (or earlier) work this truck could take is already posted nearby
+        return 0
+    near = min(CITIES, key=lambda c: geo.haversine_km(lat, lon, c[1], c[2]))
+    far = sorted((c for c in CITIES if 250 <= geo.haversine_km(lat, lon, c[1], c[2]) <= 1300),
+                 key=lambda c: geo.haversine_km(lat, lon, c[1], c[2]))[:4] or [c for c in CITIES if c != near][:3]
+    rnd = random.Random(f"{v['id']}-{date.today()}")
+    ins = ("INSERT INTO loads(fleet_id,origin,destination,o_lat,o_lon,d_lat,d_lon,weight_t,vtype,freight,status,urgent,"
+           "need,created_at) VALUES(?,?,?,?,?,?,?,?,?,?, 'open', ?, ?, ?)")
+    added = 0
+    for i, (kind, fleet) in enumerate([("safe", rnd.choice(others)), ("risky", _quick_fleet()), ("heavy", rnd.choice(others))]):
+        dest = far[i % len(far)]
+        o_lat, o_lon = lat + rnd.uniform(-0.15, 0.15), lon + rnd.uniform(-0.15, 0.15)
+        km = geo.haversine_km(o_lat, o_lon, dest[1], dest[2]) * 1.25
+        rate = {"safe": 78, "risky": 105, "heavy": 85}[kind]
+        weight = {"safe": round(cap * 0.85), "risky": round(cap * 0.8), "heavy": round(cap + 6)}[kind]
+        freight = int(round(km * rate / 1000) * 1000)
+        need = {"safe": f"URGENT: our own truck is stuck, {rnd.choice(GOODS)} must leave today (demo market)",
+                "risky": "cash on delivery, pay later (demo market)",
+                "heavy": f"{weight} t {rnd.choice(GOODS)} (demo market)"}[kind]
+        db.ex(ins, (fleet["id"], f"Near {near[0]}", dest[0], round(o_lat, 4), round(o_lon, 4), dest[1], dest[2], weight,
+                    v["vtype"], freight, 1 if kind == "safe" else 0, need, db.now()))
+        added += 1
+    log.info("demo market: posted %d synthetic loads near %s for %s", added, near[0], v["code"])
+    return added
+
 
 async def match_empty(v: dict, notify: bool = True) -> dict:
     """The truck is empty: find, verify and book the best nearby load from another fleet (agent to agent)."""
     v = db.vehicle(v["id"])
     if v["last_lat"] is None:
         return {"error": "truck location unknown"}
+    ensure_market(v)
     cands = candidates(v, v["last_lat"], v["last_lon"])
     checked = [{"load_id": c["load"]["id"], "route": f"{c['load']['origin']} → {c['load']['destination']}",
                 "freight": c["load"]["freight"], "weight_t": c["load"]["weight_t"], "posted_by": c["poster"]["fleet"],
@@ -126,7 +186,15 @@ async def match_empty(v: dict, notify: bool = True) -> dict:
                f"Checked {len(cands)} load(s) on the network — none safe & profitable. I'll keep watching.")
         if notify:
             await business._owner(v, msg)
-        return {"booked": None, "checked": checked, "say": "Abhi aas-paas koi sahi load nahi mila, main dhoondhta rahunga."}
+        why = sorted({c["reason"] for c in cands if c["reason"]})
+        say = "Abhi aas-paas koi sahi load nahi mila, main dhoondhta rahunga."
+        docs = [p for c in cands for p in c["papers"]["problems"] if any(d in p for d in REQUIRED_DOCS)]
+        if docs and any(c["poster"]["pass"] for c in cands):
+            say = ("Load mile, par gaadi ke kaagaz is trip tak valid nahi hain — " + "; ".join(sorted(set(docs)))[:200] +
+                   ". Pehle renew karwaiye, phir main book kar dunga.")
+        elif cands:
+            say = (f"{len(cands)} load dekhe, koi safe nahi tha — " + "; ".join(why)[:220] + ". Main dhoondhta rahunga.")
+        return {"booked": None, "checked": checked, "rejected_reasons": why, "say": say}
     l, poster = best["load"], db.fleet(best["load"]["fleet_id"])
     # agent-to-agent: our agent offers the truck, the poster fleet's CEO agent accepts (auto for verified carriers)
     offer = (f"{db.fleet(v['fleet_id'])['name']} offers {mask_reg(v['reg_label'])} ({v['vtype']}) for your load #{l['id']} "

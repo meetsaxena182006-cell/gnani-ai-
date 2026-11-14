@@ -57,7 +57,7 @@ def llm_providers() -> list[dict]:
         if key and url and model:
             out.append({"name": os.getenv(f"{prefix}_NAME", prefix.lower()), "api_key": key, "base_url": url, "model": model})
     # Gemini models get busy (503) or retired (404): try sibling models on the same key before giving up
-    fallbacks = _list("LLM_FALLBACK_MODELS", "gemini-flash-latest,gemini-2.5-flash,gemini-flash-lite-latest,gemini-2.5-flash-lite")
+    fallbacks = _list("LLM_FALLBACK_MODELS", "gemini-flash-latest,gemini-flash-lite-latest,gemini-3-flash-preview,gemini-2.5-flash")
     extra = []
     for p in out:
         if "generativelanguage.googleapis.com" in p["base_url"]:
@@ -65,7 +65,8 @@ def llm_providers() -> list[dict]:
                 if all(m != q["model"] for q in out + extra if q["api_key"] == p["api_key"]):
                     extra.append({**p, "name": f"{p['name']}:{m}", "model": m})
     # Groq rate limits are per model: a sibling model on the same key keeps answering when one hits 429
-    groq_more = _list("GROQ_FALLBACK_MODELS", "openai/gpt-oss-20b")
+    groq_more = _list("GROQ_FALLBACK_MODELS", "meta-llama/llama-4-scout-17b-16e-instruct,openai/gpt-oss-20b,"
+                                      "llama-3.3-70b-versatile,moonshotai/kimi-k2-instruct-0905,qwen/qwen3-32b")
     fast = []
     for p in out:
         if "api.groq.com" in p["base_url"]:

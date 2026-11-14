@@ -124,6 +124,10 @@ def _fleet_tools(fleet_id: int) -> list[Tool]:
         elif period == "week":
             where.append("e.created_at>=?")
             args.append((datetime.now(timezone.utc) - timedelta(days=7)).isoformat(timespec="seconds"))
+        elif period == "month":
+            where.append("e.created_at>=?")
+            args.append(datetime.now(timezone.utc).replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+                        .isoformat(timespec="seconds"))
         if vehicle_code:
             where.append("v.id=?"); args.append(find_vehicle(vehicle_code)["id"])
         rows = db.q("SELECT v.code, e.category, SUM(e.amount) total, SUM(e.litres) litres, COUNT(*) n "
@@ -389,7 +393,7 @@ def _fleet_tools(fleet_id: int) -> list[Tool]:
              params({}), fleet_health),
         Tool("fleet_status", "Where every truck is, its trip, last update and any open incident.", params({}), fleet_status),
         Tool("expenses_report", "Confirmed expenses and freight received, grouped by truck and category.",
-             params({"period": {"type": "string", "enum": ["today", "week", "all"]}, "vehicle_code": s}), expenses_report),
+             params({"period": {"type": "string", "enum": ["today", "week", "month", "all"]}, "vehicle_code": s}), expenses_report),
         Tool("trip_profit", "Profit/loss of a truck's current (or last) trip from logged expenses and freight.",
              params({"vehicle_code": s}, ["vehicle_code"]), trip_profit),
         Tool("quote_freight", "Exact cost breakdown and recommended quote for a new load (diesel + tolls + driver + "
@@ -417,7 +421,8 @@ def system_prompt(fleet: dict) -> str:
     vs = db.q("SELECT code, reg_label, driver_name, vtype FROM vehicles WHERE fleet_id=?", (fleet["id"],))
     return f"""You are the CEO Agent (office manager) of the transport company "{fleet['name']}".
 You talk to the owner{(' ' + fleet['owner_name']) if fleet.get('owner_name') else ''} in the language they use
-(Hindi, Hinglish or English). Be brief, precise and business-like. Today's diesel price: ₹{fleet['diesel_price']}/L.
+(Hindi, Hinglish or English). Be brief, precise and business-like. Today is {date.today().strftime("%d %B %Y")}
+(this month = {date.today().strftime("%B %Y")}). Today's diesel price: ₹{fleet['diesel_price']}/L.
 Trucks: {vs}
 You have eyes on every truck every minute: GPS, NHAI toll crossings, stops, speed, diesel, documents. Each truck has
 a Driver Agent (voice companion) you can reach with message_driver.

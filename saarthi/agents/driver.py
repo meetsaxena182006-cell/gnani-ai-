@@ -91,8 +91,9 @@ async def intercept(v: dict, text: str) -> str | None:
         if yn is False and not re.search(r"\d", text):
             cancel_all(v)
             return "Theek hai, cancel kar diya. Sahi amount dobara boliye."
-        cancel_all(v)  # a correction or something else: start over cleanly, let the LLM re-log
-        return None
+        if re.search(r"\d", text):
+            cancel_all(v)  # a correction with a new number: start over cleanly, let the LLM re-log
+        return None        # another topic: keep the entry waiting for his yes/no, answer the new question
     q = open_question(vid)
     if q and yn is not None:
         questions.pop(vid, None)
@@ -180,8 +181,18 @@ def make_tools(vid: int, turn: Turn) -> list[Tool]:
         if amount is None or amount <= 0 or amount > 500000:
             raise ValueError("amount must be between 1 and 5,00,000 rupees; ask the driver again")
         # the model sometimes calls the tool twice for one sentence: never queue the same entry twice
-        if any(e["category"] == category and abs(e["amount"] - float(amount)) < 1 for e in pending_entries(vid)):
+        same = [e for e in pending_entries(vid) if e["category"] == category and abs(e["amount"] - float(amount)) < 1]
+        if same and (same[0].get("transcript") or "") != turn.transcript:
+            return {"status": "already_waiting", "note": "This entry is from an earlier message and is already waiting "
+                    "for his yes/no. Do NOT mention it again now; just answer what he asked in this message."}
+        if same:
             return {"status": "pending_confirmation", "say": confirm_prompt(pending_entries(vid))}
+        recent = db.one("SELECT id FROM expenses WHERE vehicle_id=? AND category=? AND abs(amount-?)<1 AND created_at>=? "
+                        "AND status IN ('cancelled','confirmed')", (vid, category, float(amount),
+                        (datetime.now(timezone.utc) - timedelta(minutes=30)).isoformat(timespec="seconds")))
+        if recent and not re.search(r"\d", turn.transcript):
+            return {"status": "already_handled", "note": "This amount was handled earlier. Do not log it again; answer "
+                    "what he asked in this message."}
         t = db.active_trip(vid)
         l = loc()
         db.ex("INSERT INTO expenses(vehicle_id,trip_id,category,amount,litres,note,lat,lon,status,transcript,created_at,"
@@ -573,7 +584,8 @@ def system_prompt(v: dict, moving: bool, live: bool = False) -> str:
             if moving else "Truck is parked/slow: you can talk more freely, still natural spoken length.")
     script = ("Write in the script of that language (Devanagari for Hindi/Marwari, Gurmukhi for Punjabi, Gujarati "
               "script for Gujarati); words like diesel, toll, tyre, FASTag stay as they are." if live
-              else "Write in simple Hinglish (Latin script).")
+              else ("Write in simple Hinglish (Latin script)." if lang in ("Hindi", "English") else
+                    f"Write in {lang} script."))
     return f"""You are "Saarthi" — the co-driver who lives on the phone of driver {v['driver_name'] or 'sahab'}
 (truck {v['reg_label']}, fleet "{f['name']}"). Think of yourself as JARVIS for a truck driver, with the heart of an
 old ustaad from the dhaba: sharp, caring, funny, always awake. Everything you say is SPOKEN; the phone sits in the
@@ -621,6 +633,8 @@ RULES (always):
 - Breakdown/puncture/accident/injury/fire/loot -> report_breakdown immediately.
 - Dial only with the driver's yes, and only numbers from tools (call_number). For injury/accident the driver talks
   to 112 directly; you never talk to emergency services.
+- Never reply with only a filler ("ek second", "update aa raha hai"): call the tool in this same turn and give the
+  real answer. If a tool fails, say plainly what you could not get and what you did instead.
 - Songs: play_music / stop_music. If you did not understand, ask him to repeat.
 {mode}
 
@@ -629,9 +643,26 @@ WHAT YOU REMEMBER ABOUT HIM: {_json.dumps(memories(v["id"]), ensure_ascii=False)
 SITUATION (live data, refreshed each turn): {_json.dumps(situation(v), ensure_ascii=False, default=str)}"""
 
 
+_SCRIPTS = [("ఀ", "౿", "te-IN"), ("஀", "௿", "ta-IN"), ("ಀ", "೿", "kn-IN"),
+            ("ഀ", "ൿ", "ml-IN"), ("ঀ", "৿", "bn-IN"), ("઀", "૿", "gu-IN"),
+            ("਀", "੿", "pa-IN")]
+
+
+def detect_lang(text: str) -> str | None:
+    """A non-Devanagari Indian script in what the driver said = he is speaking that language."""
+    for lo, hi, code in _SCRIPTS:
+        if sum(lo <= ch <= hi for ch in text or "") >= 3:
+            return code
+    return None
+
+
 async def handle(v: dict, text: str) -> str:
     """Text / voice-note mode (Telegram, simulator). Sends the reply via the bus and returns it."""
     text = (text or "").strip()
+    spoken = detect_lang(text)
+    if spoken and spoken != (v.get("lang") or "hi-IN"):
+        db.ex("UPDATE vehicles SET lang=? WHERE id=?", (spoken, v["id"]))
+        v = db.vehicle(v["id"])
     if not text:
         reply = "Awaaz saaf nahi aayi, dobara boliye."
     else:

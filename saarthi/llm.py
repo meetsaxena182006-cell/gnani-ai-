@@ -49,7 +49,7 @@ def providers() -> list[tuple[object, str, str]]:
         # Groq (fast, rarely busy) answers first; Gemini models are the backup. LLM_FIRST=gemini to reverse.
         if os.getenv("LLM_FIRST", "fast") != "gemini":
             cfg = sorted(cfg, key=lambda p: "generativelanguage.googleapis.com" in p["base_url"])
-        _providers = [(AsyncOpenAI(api_key=p["api_key"], base_url=p["base_url"], timeout=30, max_retries=1),
+        _providers = [(AsyncOpenAI(api_key=p["api_key"], base_url=p["base_url"], timeout=30, max_retries=0),
                        p["model"], p["name"])
                       for p in cfg]
     return _providers
@@ -65,15 +65,40 @@ def set_client(client) -> None:
     _client = client
 
 
+_cool: dict[str, float] = {}   # provider name -> time it may be used again (rate limit / retired model)
+
+
+def _cooldown(name: str, e: Exception) -> None:
+    import re as _re
+    import time as _t
+    msg, code = str(e), getattr(e, "status_code", None)
+    if code == 429 or "429" in msg[:20]:
+        m = _re.search(r"try again in ([\d.]+)\s*(ms|s)", msg)
+        wait = (float(m.group(1)) / (1000 if m.group(2) == "ms" else 1)) if m else 20.0
+        _cool[name] = _t.time() + min(wait + 0.5, 60)
+    elif code in (400, 401, 403, 404):      # retired model / bad key: don't waste time on it for a while
+        _cool[name] = _t.time() + 1800
+
+
 async def _complete(messages: list[dict], tools: list["Tool"], agent_name: str):
+    import asyncio as _aio
+    import time as _t
     last_error = None
-    for client, model, name in providers():
-        try:
-            return await client.chat.completions.create(
-                model=model, messages=messages, tools=[t.schema() for t in tools] or None, temperature=0.2)
-        except Exception as e:  # provider down / quota: try the next one
-            last_error = e
-            log.warning("[%s] LLM provider %s failed: %s; trying next", agent_name, name, e)
+    for attempt in range(2):
+        now = _t.time()
+        ready = [p for p in providers() if _cool.get(p[2], 0) <= now]
+        if not ready:      # everyone is rate-limited: wait for the first one to free up (max 12 s), then try it
+            soon = min(providers(), key=lambda p: _cool.get(p[2], 0))
+            await _aio.sleep(max(0.0, min(12.0, _cool.get(soon[2], 0) - now)))
+            ready = [soon]
+        for client, model, name in ready:
+            try:
+                return await client.chat.completions.create(
+                    model=model, messages=messages, tools=[t.schema() for t in tools] or None, temperature=0.2)
+            except Exception as e:  # provider down / quota: try the next one at once
+                last_error = e
+                _cooldown(name, e)
+                log.warning("[%s] LLM provider %s failed: %s; trying next", agent_name, name, str(e)[:160])
     raise last_error
 
 
