@@ -199,7 +199,7 @@ async def nearby(kind: str, lat: float, lon: float, radius_m: int = 15000, limit
 
 KIND_LABEL = {"mechanic": "Mechanic / garage", "tyre": "Tyre / puncture shop", "fuel": "Petrol pump",
               "hospital": "Hospital", "police": "Police station", "dhaba": "Dhaba / restaurant"}
-_JUNK = re.compile(r"(admin|(test|asdf|qwer|xxx|unnamed|untitled)|^[a-z]{1,2}$|^\W*$)", re.I)
+_JUNK = re.compile(r"(admin|b(test|asdf|qwer|xxx|unnamed|untitled)b|^[a-z]{1,2}$|^\W*$)", re.I)
 
 
 def clean_place_name(name: str | None, kind: str = "") -> str:
