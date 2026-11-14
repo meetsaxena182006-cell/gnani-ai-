@@ -80,6 +80,13 @@ def llm_providers() -> list[dict]:
     out = []
     for prefix in ("LLM", "LLM2", "LLM3", "LLM4", "LLM5", "LLM6"):
         key, url, model = _secret(f"{prefix}_API_KEY"), os.getenv(f"{prefix}_BASE_URL"), os.getenv(f"{prefix}_MODEL")
+        key = (key or "").strip().strip("'\"")
+        known = next((k for pre, k in KNOWN.items() if key.startswith(pre)), None)
+        if known and (not url or known[1] not in url):   # a Groq/NVIDIA/OpenRouter key in any box: use its own server
+            url, model = known[1], (known[2] or [known[3]])[0]
+            out.append({"name": os.getenv(f"{prefix}_NAME", known[0] if prefix == "LLM" else f"{known[0]}-{prefix.lower()}"),
+                        "api_key": key, "base_url": url, "model": model})
+            continue
         if prefix == "LLM" and key:   # primary: Gemini defaults when only the key is given
             url, model = url or settings.llm_base_url, model or settings.llm_model
         if key and url and model:
