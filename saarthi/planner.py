@@ -432,7 +432,9 @@ def owner_summary(plan: dict, title: str) -> str:
         lines.append("Risks: " + ", ".join(risks))
     if plan.get("profit") is not None:
         leg = " (remaining leg only; costs already spent are in the trip P&L)" if plan.get("start_gps_km") else ""
-        lines.append(f"Cost {inr(plan['total_cost'])} · freight {inr(plan['freight'])} · profit {inr(plan['profit'])} "
+        if isinstance(plan.get("cost"), dict):
+            lines.append("Cost lines: " + ", ".join(f"{k.replace('_', ' ')} {inr(v)}" for k, v in plan["cost"].items()))
+        lines.append(f"Total cost {inr(plan['total_cost'])} · freight {inr(plan['freight'])} · profit {inr(plan['profit'])} "
                      f"({plan['margin_pct']}%){leg}")
     lines += ["Why: " + r for r in plan.get("why", [])]
     return "\n".join(lines)
