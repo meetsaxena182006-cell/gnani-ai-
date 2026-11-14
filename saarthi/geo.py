@@ -29,7 +29,47 @@ def maps_link(lat: float, lon: float) -> str:
     return f"https://maps.google.com/?q={lat:.5f},{lon:.5f}"
 
 
+# Major freight cities: answered instantly without a map lookup (names in English and Hindi).
+CITY = {
+    "udaipur": ("उदयपुर", 24.585, 73.712), "ahmedabad": ("अहमदाबाद", 23.0225, 72.5714), "jaipur": ("जयपुर", 26.912, 75.787),
+    "indore": ("इंदौर", 22.7196, 75.8577), "surat": ("सूरत", 21.1702, 72.8311), "mumbai": ("मुंबई", 19.076, 72.8777),
+    "bhiwandi": ("भिवंडी", 19.2813, 73.0483), "delhi": ("दिल्ली", 28.6139, 77.209), "hyderabad": ("हैदराबाद", 17.385, 78.4867),
+    "pune": ("पुणे", 18.5204, 73.8567), "kota": ("कोटा", 25.2138, 75.8648), "vadodara": ("वडोदरा", 22.3072, 73.1812),
+    "bhopal": ("भोपाल", 23.2599, 77.4126), "bengaluru": ("बेंगलुरु", 12.9716, 77.5946), "bangalore": ("बैंगलोर", 12.9716, 77.5946),
+    "chennai": ("चेन्नई", 13.0827, 80.2707), "kolkata": ("कोलकाता", 22.5726, 88.3639), "nagpur": ("नागपुर", 21.1458, 79.0882),
+    "lucknow": ("लखनऊ", 26.8467, 80.9462), "kanpur": ("कानपुर", 26.4499, 80.3319), "ludhiana": ("लुधियाना", 30.901, 75.8573),
+    "jodhpur": ("जोधपुर", 26.2389, 73.0243), "ajmer": ("अजमेर", 26.4499, 74.6399), "chittorgarh": ("चित्तौड़गढ़", 24.8887, 74.6269),
+    "nashik": ("नासिक", 19.9975, 73.7898), "rajkot": ("राजकोट", 22.3039, 70.8022), "raipur": ("रायपुर", 21.2514, 81.6296),
+    "patna": ("पटना", 25.5941, 85.1376), "guwahati": ("गुवाहाटी", 26.1445, 91.7362), "kochi": ("कोच्चि", 9.9312, 76.2673),
+    "coimbatore": ("कोयंबटूर", 11.0168, 76.9558), "visakhapatnam": ("विशाखापत्तनम", 17.6868, 83.2185),
+    "gurgaon": ("गुड़गांव", 28.4595, 77.0266), "noida": ("नोएडा", 28.5355, 77.391), "agra": ("आगरा", 27.1767, 78.0081),
+    "gwalior": ("ग्वालियर", 26.2183, 78.1828), "kandla": ("कांडला", 23.0333, 70.2167), "mundra": ("मुंद्रा", 22.8397, 69.7203),
+    "bhilwara": ("भीलवाड़ा", 25.3463, 74.6364), "kishangarh": ("किशनगढ़", 26.5893, 74.8545),
+}
+_geo_cache: dict[str, dict | None] = {}
+
+
+def city_lookup(place: str) -> dict | None:
+    q = (place or "").strip().lower()
+    for key, (hi, lat, lon) in CITY.items():
+        if q == key or q == hi or q.startswith(key) or q.startswith(hi):
+            return {"name": key.title(), "lat": lat, "lon": lon}
+    return None
+
+
 async def geocode(place: str) -> dict | None:
+    hit = city_lookup(place)
+    if hit:
+        return hit
+    k = (place or "").strip().lower()
+    if k in _geo_cache:
+        return _geo_cache[k]
+    res = await _geocode_live(place)
+    _geo_cache[k] = res
+    return res
+
+
+async def _geocode_live(place: str) -> dict | None:
     async with httpx.AsyncClient(headers=UA, timeout=TIMEOUT) as c:
         r = await c.get(
             "https://nominatim.openstreetmap.org/search",
@@ -169,7 +209,23 @@ def rank_places(elements: list[dict], lat: float, lon: float, limit: int = 5) ->
 
 
 # ---------------- routing ----------------
+_route_cache: dict = {}
+
+
 async def route(o_lat: float, o_lon: float, d_lat: float, d_lon: float) -> dict:
+    """Live route, kept in memory for 6 h (roads don't change by the minute; traffic is only valid when fresh)."""
+    import time as _t
+    k = (round(o_lat, 2), round(o_lon, 2), round(d_lat, 2), round(d_lon, 2))
+    hit = _route_cache.get(k)
+    if hit and _t.time() - hit[0] < 6 * 3600:
+        return hit[1]
+    res = await _route_live(o_lat, o_lon, d_lat, d_lon)
+    if res.get("routes"):
+        _route_cache[k] = (_t.time(), res)
+    return res
+
+
+async def _route_live(o_lat: float, o_lon: float, d_lat: float, d_lon: float) -> dict:
     if settings.google_maps_key:
         try:
             return await _google_route(o_lat, o_lon, d_lat, d_lon)
@@ -354,7 +410,7 @@ async def forecast_hourly(lat: float, lon: float, days: int = 3) -> dict:
               "hourly": "precipitation_probability,precipitation,visibility,weather_code,temperature_2m,wind_speed_10m"}
     import asyncio as _aio
     try:
-        return await _aio.wait_for(_meteo(params), 6)
+        return await _aio.wait_for(_meteo(params, ttl=7200), 6)
     except Exception:
         return await _met_norway_hourly(lat, lon)
 
@@ -368,7 +424,7 @@ async def _met_norway_hourly(lat: float, lon: float) -> dict:
     from datetime import datetime as _dt, timedelta as _td
     k = (round(lat, 2), round(lon, 2))
     hit = _met_hourly_cache.get(k)
-    if hit and _t.time() - hit[0] < 1800:
+    if hit and _t.time() - hit[0] < 7200:
         return hit[1]
     async with httpx.AsyncClient(headers={"User-Agent": "saarthi-fleet-demo/1.0 github.com/meetsaxena182006-cell/gnani-ai-"},
                                  timeout=httpx.Timeout(8.0)) as c:
@@ -397,9 +453,23 @@ async def _met_norway_hourly(lat: float, lon: float) -> dict:
 
 async def overpass_along(points: list[tuple[float, float]], kinds: tuple[str, ...] = ("fuel", "dhaba"),
                          radius_m: int = 3000) -> list[list[dict]]:
-    """Fuel pumps / dhabas near each planned stop point, in ONE Overpass request."""
+    """Fuel pumps / dhabas near each planned stop point, in ONE Overpass request (kept 12 h)."""
     if not points:
         return []
+    import time as _t
+    ck = (tuple((round(a, 2), round(b, 2)) for a, b in points), kinds, radius_m)
+    hit = _along_cache.get(ck)
+    if hit and _t.time() - hit[0] < 12 * 3600:
+        return hit[1]
+    out = await _overpass_along_live(points, kinds, radius_m)
+    _along_cache[ck] = (_t.time(), out)
+    return out
+
+
+_along_cache: dict = {}
+
+
+async def _overpass_along_live(points, kinds, radius_m) -> list[list[dict]]:
     tags = [t for k in kinds for t in HELP_TAGS[k]]
     body = "".join(f"{t}(around:{radius_m},{lat},{lon});" for lat, lon in points for t in tags)
     async with httpx.AsyncClient(headers=UA, timeout=httpx.Timeout(6.0)) as c:

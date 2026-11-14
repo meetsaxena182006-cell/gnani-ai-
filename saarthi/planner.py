@@ -49,7 +49,22 @@ RESTRICTIONS = Path(__file__).resolve().parent.parent / "data" / "truck_restrict
 
 
 # ------------------------------ helpers ------------------------------
+_cum_cache: dict = {}
+
+
 def _cum_km(coords: list[tuple[float, float]]) -> list[float]:
+    if len(coords) > 50:   # long route polylines are re-used by every departure-time simulation: measure once
+        ck = hash(tuple(map(tuple, coords)))
+        hit = _cum_cache.get(ck)
+        if hit is None:
+            if len(_cum_cache) > 300:
+                _cum_cache.clear()
+            hit = _cum_cache[ck] = _cum_km_raw(coords)
+        return hit
+    return _cum_km_raw(coords)
+
+
+def _cum_km_raw(coords: list[tuple[float, float]]) -> list[float]:
     out = [0.0]
     for a, b in zip(coords, coords[1:]):
         out.append(out[-1] + geo.haversine_km(a[0], a[1], b[0], b[1]))
@@ -280,7 +295,7 @@ async def plan_trip(req: TripRequest, with_places: bool = True) -> dict:
         lat, lon = _point_at(main["coords"], cum, km_along)
         return (km_along * main["km"] / (cum[-1] or 1), await geo.forecast_hourly(lat, lon))
     try:
-        got = await _aio.wait_for(_aio.gather(*[_sample(k) for k in range(n)], return_exceptions=True), 15)
+        got = await _aio.wait_for(_aio.gather(*[_sample(k) for k in range(n)], return_exceptions=True), 8)
     except Exception:
         got = []
     samples = [g for g in got if isinstance(g, tuple)]
@@ -298,7 +313,7 @@ async def plan_trip(req: TripRequest, with_places: bool = True) -> dict:
     fastest = min(results, key=lambda x: (x[3]["total_h"], -x[0]))
     leave_now = max((x for x in results if x[2].depart == start), key=lambda x: x[0])
     plan = _describe(req, best, weather_used=bool(samples), traffic=r.get("traffic"))
-    plan["weather_summary"] = _weather_line(samples, best[2])
+    plan["weather_summary"], plan["weather"] = _weather_line(samples, best[2])
     if with_places:
         await _name_stops(plan)
     plan["alternatives"] = {"leave_now": _brief(leave_now), "fastest": _brief(fastest)}
@@ -317,7 +332,7 @@ def _brief(x) -> dict:
 def _weather_line(samples, sim) -> str:
     """One honest line: what the live forecast says along the route while the truck is on it."""
     if not samples:
-        return "Weather: live forecast not reachable right now"
+        return "Weather: live forecast not reachable right now", None
     src = {js.get("source", "Open-Meteo") for _, js in samples}
     t0, t1 = sim.depart.astimezone(IST).strftime("%Y-%m-%dT%H:00"), sim.arrive.astimezone(IST).strftime("%Y-%m-%dT%H:00")
     temps, rain, fog, wet = [], 0.0, 0, 0
@@ -332,10 +347,12 @@ def _weather_line(samples, sim) -> str:
                 fog += g("weather_code") in (45, 48)
                 wet += (g("weather_code") or 0) >= 51
     if not temps:
-        return f"Weather ({'/'.join(sorted(src))}): forecast does not cover the whole trip yet"
+        return f"Weather ({'/'.join(sorted(src))}): forecast does not cover the whole trip yet", None
     sky = "fog likely at some hours" if fog else ("rain expected on some stretches" if wet else "no rain or fog expected")
-    return (f"Weather (live {'/'.join(sorted(src))} forecast at {len(samples)} points on the route): "
-            f"{round(min(temps))}-{round(max(temps))}°C, {sky}" + (f", max rain {rain} mm/h" if rain else ""))
+    info = {"source": "/".join(sorted(src)), "points": len(samples), "tmin": round(min(temps)), "tmax": round(max(temps)),
+            "fog": bool(fog), "rain": bool(wet), "rain_mm": rain}
+    return (f"Weather (live {info['source']} forecast at {len(samples)} points on the route): "
+            f"{info['tmin']}-{info['tmax']}°C, {sky}" + (f", max rain {rain} mm/h" if rain else "")), info
 
 
 def _describe(req: TripRequest, x, weather_used: bool, traffic) -> dict:
@@ -392,7 +409,7 @@ async def _name_stops(plan: dict) -> None:
     if _t.time() < geo._overpass_down_until:   # public map server known to be down: skip, plan still answers
         return
     try:
-        near = await _aio.wait_for(geo.overpass_along(pts), 12)
+        near = await _aio.wait_for(geo.overpass_along(pts), 6)
     except Exception:
         geo._overpass_down_until = _t.time() + 600
         return

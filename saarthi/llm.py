@@ -103,8 +103,11 @@ async def _complete(messages: list[dict], tools: list["Tool"], agent_name: str):
             ready = [soon]
         for client, model, name in ready:
             try:
+                # gpt-oss thinks before it talks; "low" answers in ~0.5 s instead of ~2 s with the same tool choice
+                kw = {"extra_body": {"reasoning_effort": os.getenv("LLM_REASONING_EFFORT", "low")}} if "gpt-oss" in model else {}
                 return await client.chat.completions.create(
-                    model=model, messages=messages, tools=[t.schema() for t in tools] or None, temperature=0.2)
+                    model=model, messages=messages, tools=[t.schema() for t in tools] or None, temperature=0.2,
+                    max_tokens=700, **kw)
             except Exception as e:  # provider down / quota: try the next one at once
                 last_error = e
                 _cooldown(name, e)

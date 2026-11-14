@@ -67,6 +67,9 @@ async def amain() -> None:
         db.ex("UPDATE fleets SET owner_chat_id=900000+id WHERE owner_chat_id IS NULL")
         db.ex("UPDATE vehicles SET driver_chat_id=910000+id WHERE driver_chat_id IS NULL")
     asyncio.create_task(_fatigue_loop())
+    if os.getenv("FASTLANE_PREWARM", "1") == "1":   # keep common routes' live map + weather data warm
+        from . import fastlane
+        asyncio.create_task(fastlane.prewarm_forever())
     if os.getenv("KEEP_AWAKE", "1" if "onrender.com" in settings.public_base_url else "0") == "1":
         asyncio.create_task(_keep_awake())
     if os.getenv("DEMO_DRIVE", "0") == "1":   # a SIMULATED truck drives NH48 so the CEO has something to watch

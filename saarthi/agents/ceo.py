@@ -441,6 +441,12 @@ Rules:
 
 async def handle_owner(fleet: dict, text: str) -> str:
     key = f"owner:{fleet['id']}"
+    from ..fastlane import owner_fast
+    fast = await owner_fast(fleet, text)      # route / trip-cost questions: answered instantly from live caches
+    if fast:
+        memory.add(key, "user", text)
+        memory.add(key, "assistant", fast)
+        return fast
     reply = await run_agent(system_prompt(fleet), memory.get(key), text, _fleet_tools(fleet["id"]),
                             agent_name=f"ceo:{fleet['code']}")
     memory.add(key, "user", text)

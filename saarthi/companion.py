@@ -45,6 +45,9 @@ PROACTIVE_S = int(os.getenv("COMPANION_PROACTIVE_S", "75"))  # quiet this long -
 VOICES = {"hi-IN": "Poorvi", "pa-IN": "Zayan", "gu-IN": "Veera", "mr-IN": "Ishaan", "bn-IN": "Dhruva",
           "ta-IN": "Asmita", "te-IN": "Suhana", "kn-IN": "Kavin", "ml-IN": "Riyaan", "en-IN": "Pranav"}
 GREETING = "राम राम बॉस! सारथी हाज़िर है। आज कहाँ का सफ़र है?"
+FILLERS = {"hi-IN": "हाँ जी, एक सेकंड देखता हूँ…", "en-IN": "Sure, one second…", "te-IN": "సరే, ఒక్క క్షణం…",
+           "ta-IN": "சரி, ஒரு நொடி…", "kn-IN": "ಸರಿ, ಒಂದು ಕ್ಷಣ…", "ml-IN": "ശരി, ഒരു നിമിഷം…", "bn-IN": "হ্যাঁ, এক সেকেন্ড…",
+           "gu-IN": "હા, એક સેકન્ડ…", "mr-IN": "हो, एक सेकंद…", "pa-IN": "ਹਾਂ ਜੀ, ਇੱਕ ਸਕਿੰਟ…"}
 GREETINGS = {"hi-IN": GREETING, "te-IN": "నమస్తే బాస్! సారథి సిద్ధంగా ఉన్నాడు. ఈరోజు ప్రయాణం ఎక్కడికి?",
              "mr-IN": "राम राम बॉस! सारथी हजर आहे. आज कुठे जायचं?", "gu-IN": "રામ રામ બોસ! સારથી હાજર છે. આજે ક્યાં જવાનું છે?",
              "pa-IN": "ਸਤ ਸ੍ਰੀ ਅਕਾਲ ਬੌਸ! ਸਾਰਥੀ ਹਾਜ਼ਰ ਹੈ। ਅੱਜ ਕਿੱਥੇ ਜਾਣਾ ਹੈ?", "en-IN": "Hello boss! Saarthi here. Where are we headed today?"}
@@ -344,6 +347,7 @@ class SpokenLog(_guard_base()):
         from pipecat.frames.frames import LLMFullResponseEndFrame, LLMTextFrame
         await super().process_frame(frame, direction)
         if isinstance(frame, LLMTextFrame):
+            self.s.last_llm_text = time.time()
             self.buf.append(frame.text or "")
         elif isinstance(frame, LLMFullResponseEndFrame) and self.buf:
             text = "".join(self.buf).strip()
@@ -395,7 +399,22 @@ class CompanionGuard(_guard_base()):
             self.s.turn.transcript = text
             self.s.turn.new_pending = False
             self.s.refresh_context(v)
+            if os.getenv("VOICE_FILLER", "1") == "1":
+                asyncio.create_task(self._backchannel(time.time()))
         await self.push_frame(frame, direction)
+
+    async def _backchannel(self, asked_at: float) -> None:
+        """Like a person on the phone: if the answer needs a lookup (map, weather) and is not ready in 0.8 s,
+        say a short "haan ji, dekhta hoon" so the driver never hears dead air. Spoken by Gnani Timbre."""
+        try:
+            await asyncio.sleep(0.8)
+            if getattr(self.s, "last_llm_text", 0) >= asked_at or self.s.last_bot_speech >= asked_at:
+                return
+            from pipecat.frames.frames import TTSSpeakFrame
+            await self.push_frame(TTSSpeakFrame(FILLERS.get(self.s.lang, FILLERS["hi-IN"])))
+            self.s.last_bot_speech = time.time()
+        except Exception as e:   # never let a filler break the call
+            log.debug("backchannel skipped: %s", e)
 
     async def _client_message(self, msg) -> None:
         if not isinstance(msg, dict):

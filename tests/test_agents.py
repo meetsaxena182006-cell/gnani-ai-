@@ -70,7 +70,8 @@ async def test_breakdown_without_mechanic_triggers_mesh(fresh):
     assert any(o.chat_id == 2001 and "helping" in o.text for o in bus.sent)
 
 
-async def test_ceo_quote_uses_deterministic_engine(fresh):
+async def test_ceo_quote_uses_deterministic_engine(fresh, monkeypatch):
+    monkeypatch.setenv("FASTLANE", "0")   # this test checks the AI agent's own quote tool path
     llm.set_client(FakeLLM([[("quote_freight", {"origin": "Udaipur", "destination": "Ahmedabad",
                                                  "distance_km": 260, "vtype": "truck_10w", "offered_freight": 20000})],
                             "done"]))

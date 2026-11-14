@@ -82,14 +82,28 @@ def on_route(coords_latlon: list[tuple[float, float]], vtype: str, tolerance_km:
     """Toll plazas along a route polyline and the expected total for this vehicle class."""
     if len(coords_latlon) < 2:
         return {"plazas": [], "expected_total": 0, "unknown_rates": 0}
+    ck = (hash(tuple(map(tuple, coords_latlon))), vtype, tolerance_km)
+    if ck in _on_route_cache:
+        return _on_route_cache[ck]
     lats = [c[0] for c in coords_latlon]; lons = [c[1] for c in coords_latlon]
     box = (min(lats) - 0.05, max(lats) + 0.05, min(lons) - 0.05, max(lons) + 0.05)
+    # grid index: 0.1-degree cells -> road segments touching them, so each plaza checks only nearby road
+    cell = 0.1
+    grid: dict = {}
+    for i in range(len(coords_latlon) - 1):
+        a, b = coords_latlon[i], coords_latlon[i + 1]
+        for gx in range(int(math.floor((min(a[0], b[0]) - 0.02) / cell)), int(math.floor((max(a[0], b[0]) + 0.02) / cell)) + 1):
+            for gy in range(int(math.floor((min(a[1], b[1]) - 0.02) / cell)), int(math.floor((max(a[1], b[1]) + 0.02) / cell)) + 1):
+                grid.setdefault((gx, gy), []).append(i)
     found = []
     for p in plazas():
         if not (box[0] <= p["lat"] <= box[1] and box[2] <= p["lon"] <= box[3]):
             continue
+        cand = grid.get((int(math.floor(p["lat"] / cell)), int(math.floor(p["lon"] / cell))))
+        if not cand:
+            continue
         best_i, best_d = None, 1e9
-        for i in range(len(coords_latlon) - 1):
+        for i in cand:
             d = _point_segment_km((p["lat"], p["lon"]), coords_latlon[i], coords_latlon[i + 1])
             if d < best_d:
                 best_i, best_d = i, d
@@ -104,5 +118,12 @@ def on_route(coords_latlon: list[tuple[float, float]], vtype: str, tolerance_km:
         else:
             total += fee
         items.append({"name": p["name"], "fee_2019_20": fee})
-    return {"plazas": items, "expected_total": total, "unknown_rates": unknown,
-            "note": "NHAI 2019-20 rates; current tolls are higher (annual revisions). Use as a minimum."}
+    res = {"plazas": items, "expected_total": total, "unknown_rates": unknown,
+           "note": "NHAI 2019-20 rates; current tolls are higher (annual revisions). Use as a minimum."}
+    if len(_on_route_cache) > 500:
+        _on_route_cache.clear()
+    _on_route_cache[ck] = res
+    return res
+
+
+_on_route_cache: dict = {}

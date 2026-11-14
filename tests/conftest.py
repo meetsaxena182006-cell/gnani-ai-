@@ -54,3 +54,22 @@ def fresh(monkeypatch):
     monkeypatch.setattr("saarthi.geo.nearby", no_nearby)
     yield
     llm.set_client(None)
+
+
+import pytest as _pytest
+
+
+@_pytest.fixture(autouse=True)
+def _fresh_live_caches():
+    """Each test starts with empty live-data caches (they are module-level for speed in production)."""
+    from saarthi import geo, planner, tolls
+    for c in (geo._route_cache, geo._along_cache, geo._geo_cache, geo._met_hourly_cache, geo._meteo_cache,
+              planner._cum_cache, tolls._on_route_cache):
+        c.clear()
+    geo._overpass_down_until = 0.0
+    try:
+        from saarthi import fastlane
+        fastlane._plan_memo.clear()
+    except Exception:
+        pass
+    yield
