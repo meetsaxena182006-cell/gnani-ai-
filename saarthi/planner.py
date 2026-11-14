@@ -273,14 +273,17 @@ async def plan_trip(req: TripRequest, with_places: bool = True) -> dict:
     main = options[0]
     cum = _cum_km(main["coords"])
     n = max(2, min(6, int(main["km"] // 100) + 2))
-    samples = []
-    for k in range(n):
+    import asyncio as _aio
+
+    async def _sample(k):  # all forecast points fetched at the same time, never more than ~15 s in total
         km_along = cum[-1] * k / (n - 1)
         lat, lon = _point_at(main["coords"], cum, km_along)
-        try:
-            samples.append((km_along * main["km"] / (cum[-1] or 1), await geo.forecast_hourly(lat, lon)))
-        except Exception:
-            pass
+        return (km_along * main["km"] / (cum[-1] or 1), await geo.forecast_hourly(lat, lon))
+    try:
+        got = await _aio.wait_for(_aio.gather(*[_sample(k) for k in range(n)], return_exceptions=True), 15)
+    except Exception:
+        got = []
+    samples = [g for g in got if isinstance(g, tuple)]
     weather = Weather(samples)
     rules = load_restrictions()
     results = []
@@ -359,9 +362,14 @@ def _reasons(best, now, fastest) -> list[str]:
 
 async def _name_stops(plan: dict) -> None:
     pts = [(s["lat"], s["lon"]) for s in plan["stops"] if s["kind"] != "no_entry_wait"][:10]
+    import asyncio as _aio
+    import time as _t
+    if _t.time() < geo._overpass_down_until:   # public map server known to be down: skip, plan still answers
+        return
     try:
-        near = await geo.overpass_along(pts)
+        near = await _aio.wait_for(geo.overpass_along(pts), 12)
     except Exception:
+        geo._overpass_down_until = _t.time() + 600
         return
     i = 0
     for s in plan["stops"]:

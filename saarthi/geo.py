@@ -362,8 +362,8 @@ async def overpass_along(points: list[tuple[float, float]], kinds: tuple[str, ..
         return []
     tags = [t for k in kinds for t in HELP_TAGS[k]]
     body = "".join(f"{t}(around:{radius_m},{lat},{lon});" for lat, lon in points for t in tags)
-    async with httpx.AsyncClient(headers=UA, timeout=httpx.Timeout(40.0)) as c:
-        r = await _overpass(c, f"[out:json][timeout:35];({body});out center 200;")
+    async with httpx.AsyncClient(headers=UA, timeout=httpx.Timeout(6.0)) as c:
+        r = await _overpass(c, f"[out:json][timeout:10];({body});out center 200;", mirrors=2)
         r.raise_for_status()
         elements = r.json().get("elements", [])
     out = []
