@@ -660,6 +660,8 @@ def detect_lang(text: str) -> str | None:
     for lo, hi, code in _SCRIPTS:
         if sum(lo <= ch <= hi for ch in text or "") >= 3:
             return code
+    if sum("ऀ" <= ch <= "ॿ" for ch in text or "") >= 3:
+        return "devanagari"          # Hindi (or Marathi): switch back from another language
     return None
 
 
@@ -667,6 +669,8 @@ async def handle(v: dict, text: str) -> str:
     """Text / voice-note mode (Telegram, simulator). Sends the reply via the bus and returns it."""
     text = (text or "").strip()
     spoken = detect_lang(text)
+    if spoken == "devanagari":
+        spoken = None if (v.get("lang") or "hi-IN") in ("hi-IN", "mr-IN") else "hi-IN"
     if spoken and spoken != (v.get("lang") or "hi-IN"):
         db.ex("UPDATE vehicles SET lang=? WHERE id=?", (spoken, v["id"]))
         v = db.vehicle(v["id"])

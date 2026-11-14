@@ -156,6 +156,36 @@ def owner_papers(fleet: dict, hi: bool) -> str:
     return ". ".join(out) + "."
 
 
+_MONTH = re.compile(r"(महीने|महीना|mahine|mahina|month|मंथ)", re.I)
+_MONEY = re.compile(r"(मुनाफ़|मुनाफ|munafa|munaafa|profit|खर्च|kharch|p&l|pnl|hisab|hisaab|हिसाब|कमाई|kamai)", re.I)
+
+
+def owner_month(fleet: dict, hi: bool) -> str:
+    """This month's money, computed in code from the ledger (an AI must not do this arithmetic)."""
+    from datetime import datetime, timezone
+    start = datetime.now(timezone.utc).replace(day=1, hour=0, minute=0, second=0, microsecond=0).isoformat(timespec="seconds")
+    rows = db.q("SELECT e.category, SUM(e.amount) s FROM expenses e JOIN vehicles v ON v.id=e.vehicle_id "
+                "WHERE v.fleet_id=? AND e.status='confirmed' AND e.created_at>=? GROUP BY e.category ORDER BY s DESC",
+                (fleet["id"], start))
+    spend_rows = [r for r in rows if not r["category"].startswith("freight_")]
+    spend = sum(r["s"] for r in spend_rows)
+    got = sum(r["s"] for r in rows if r["category"].startswith("freight_"))
+    trips = db.q("SELECT t.freight_amount f FROM trips t JOIN vehicles v ON v.id=t.vehicle_id "
+                 "WHERE v.fleet_id=? AND t.started_at>=?", (fleet["id"], start))
+    agreed = sum(t["f"] or 0 for t in trips)
+    cats = ", ".join(f"{r['category']} {inr(r['s'])}" for r in spend_rows[:4])
+    if hi:
+        out = (f"इस महीने का हिसाब ({len(trips)} ट्रिप): खर्चा {inr(spend)}" + (f" ({cats})" if cats else "")
+               + f"; तय भाड़ा {inr(agreed)}, अब तक मिला {inr(got)}। ")
+        out += (f"अनुमानित मुनाफ़ा (तय भाड़ा − खर्चा) {inr(agreed - spend)}; हाथ में नकद (मिला − खर्चा) {inr(got - spend)}।"
+                if agreed else f"हाथ में नकद (मिला − खर्चा) {inr(got - spend)}।")
+        return out + " किसी गाड़ी का अलग हिसाब चाहिए तो नंबर बोलिए।"
+    out = (f"This month ({len(trips)} trips): spend {inr(spend)}" + (f" ({cats})" if cats else "")
+           + f"; freight agreed {inr(agreed)}, received so far {inr(got)}. ")
+    return out + (f"Expected profit (agreed − spend) {inr(agreed - spend)}; cash in hand (received − spend) {inr(got - spend)}."
+                  if agreed else f"Cash in hand (received − spend) {inr(got - spend)}.")
+
+
 async def owner_fast(fleet: dict, text: str) -> str | None:
     """Instant answer for a route/trip-cost question, or None to let the AI agent handle it."""
     import os
@@ -165,9 +195,11 @@ async def owner_fast(fleet: dict, text: str) -> str | None:
         out = owner_tracking(fleet, text)
         if out:
             return out
+    if _MONTH.search(text) and _MONEY.search(text) and not _cities_in(text) and not _VEH.search(text):
+        return owner_month(fleet, _hindi(text))
     q = parse_route(text)
     if not q:
-        if _PAPERS.search(text) and not _cities_in(text):
+        if _PAPERS.search(text) and not _cities_in(text) and not re.search(r"(salah|सलाह|tip|advice|tareeke|तरीके)", text, re.I):
             return owner_papers(fleet, _hindi(text))
         return None
     vtype, label = "truck_10w", ""

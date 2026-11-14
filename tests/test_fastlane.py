@@ -70,3 +70,16 @@ async def test_tracking_link_comes_from_the_database(fresh):
     t = db.active_trip(v["id"])
     out = await fastlane.owner_fast(f, "MW-T1 का ट्रैकिंग लिंक भेजो")
     assert f"/track/{t['track_token']}" in out
+
+
+async def test_month_money_is_computed_in_code(fresh):
+    from saarthi import db
+    f = dict(db.one("SELECT * FROM fleets WHERE code='MEWAR'"))
+    out = await fastlane.owner_fast(f, "इस महीने फ्लीट का कुल खर्चा और मुनाफ़ा कितना है?")
+    assert out.startswith("इस महीने का हिसाब") and "खर्चा" in out
+
+
+def test_hindi_switches_back_from_telugu():
+    from saarthi.agents.driver import detect_lang
+    assert detect_lang("నాకు తెలుగులో చెప్పండి") == "te-IN"
+    assert detect_lang("आगे मौसम कैसा है") == "devanagari"
