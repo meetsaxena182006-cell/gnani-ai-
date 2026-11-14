@@ -50,6 +50,7 @@ RESTRICTIONS = Path(__file__).resolve().parent.parent / "data" / "truck_restrict
 
 # ------------------------------ helpers ------------------------------
 _cum_cache: dict = {}
+_sim_memo: dict = {}
 
 
 def _cum_km(coords: list[tuple[float, float]]) -> list[float]:
@@ -119,20 +120,30 @@ class Weather:
 
     def __init__(self, samples: list[tuple[float, dict]]):
         self.samples = samples  # [(km_along_route, open-meteo json)]
+        # time -> index per sample, built once (the simulator asks thousands of times per plan)
+        self._idx = [{tm: i for i, tm in enumerate((js.get("hourly", {}) or {}).get("time") or [])} for _, js in samples]
+        self._memo: dict = {}
+        self.key = tuple((round(k, 1), id(js)) for k, js in samples)
 
     def at(self, km: float, t: datetime) -> dict:
         if not self.samples:
             return {}
-        km0, js = min(self.samples, key=lambda s: abs(s[0] - km))
-        h = js.get("hourly", {})
-        times = h.get("time") or []
-        key = t.astimezone(IST).strftime("%Y-%m-%dT%H:00")
-        if key not in times:
-            return {}
-        i = times.index(key)
-        g = lambda k: (h.get(k) or [None] * len(times))[i]
-        return {"code": g("weather_code"), "vis": g("visibility"), "rain": g("precipitation"),
-                "prob": g("precipitation_probability"), "temp": g("temperature_2m"), "wind": g("wind_speed_10m")}
+        j = min(range(len(self.samples)), key=lambda n: abs(self.samples[n][0] - km))
+        tl = t.astimezone(IST)
+        mk = (j, tl.year, tl.month, tl.day, tl.hour)
+        hit = self._memo.get(mk)
+        if hit is not None:
+            return hit
+        h = self.samples[j][1].get("hourly", {})
+        i = self._idx[j].get(tl.strftime("%Y-%m-%dT%H:00"))
+        if i is None:
+            out = {}
+        else:
+            g = lambda k: (h.get(k) or ())[i] if i < len(h.get(k) or ()) else None
+            out = {"code": g("weather_code"), "vis": g("visibility"), "rain": g("precipitation"),
+                   "prob": g("precipitation_probability"), "temp": g("temperature_2m"), "wind": g("wind_speed_10m")}
+        self._memo[mk] = out
+        return out
 
     @staticmethod
     def factor(w: dict) -> tuple[float, str | None]:
@@ -306,7 +317,16 @@ async def plan_trip(req: TripRequest, with_places: bool = True) -> dict:
         for h in range(0, req.search_hours + 1):
             dep = start + timedelta(hours=h)
             live_traffic = opt["traffic_delay_h"] if h == 0 else 0.0  # live traffic only valid for leaving now
-            sim = simulate(req, opt["i"], opt["coords"], opt["km"], opt["base_h"], dep, weather, rules, live_traffic)
+            sk = (hash(tuple(map(tuple, opt["coords"]))) if h == 0 else sk_route, opt["i"], opt["km"], opt["base_h"], dep,
+                  req.vtype, req.relief_driver, req.fuel_now_l, live_traffic, weather.key)
+            if h == 0:
+                sk_route = sk[0]
+            sim = _sim_memo.get(sk)
+            if sim is None:   # the drive itself does not depend on the freight price: re-used for every quote
+                sim = simulate(req, opt["i"], opt["coords"], opt["km"], opt["base_h"], dep, weather, rules, live_traffic)
+                if len(_sim_memo) > 4000:
+                    _sim_memo.clear()
+                _sim_memo[sk] = sim
             sc = score(req, sim, opt["km"], opt["tolls"]["expected_total"], t0=start)
             results.append((sc["score"], opt, sim, sc))
     best = max(results, key=lambda x: x[0])
