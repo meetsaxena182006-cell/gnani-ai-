@@ -352,8 +352,9 @@ async def forecast_hourly(lat: float, lon: float, days: int = 3) -> dict:
     """Raw hourly forecast (IST) for a point: used by the trip planner to test many departure times offline."""
     params = {"latitude": lat, "longitude": lon, "timezone": "Asia/Kolkata", "forecast_days": days,
               "hourly": "precipitation_probability,precipitation,visibility,weather_code,temperature_2m,wind_speed_10m"}
+    import asyncio as _aio
     try:
-        return await _meteo(params)
+        return await _aio.wait_for(_meteo(params), 6)
     except Exception:
         return await _met_norway_hourly(lat, lon)
 
