@@ -164,6 +164,10 @@ async def run_agent(system: str, history: list[dict], user_text: str, tools: lis
                 args = json.loads(c.function.arguments or "{}")
                 if tool is None:
                     raise ValueError(f"unknown tool {c.function.name}")
+                import inspect as _insp
+                sig = _insp.signature(tool.fn)
+                if not any(p.kind == p.VAR_KEYWORD for p in sig.parameters.values()):
+                    args = {k: v for k, v in (args or {}).items() if k in sig.parameters}
                 result = await tool.fn(**args)
             except Exception as e:  # report tool errors back to the model instead of crashing
                 log.exception("[%s] tool %s failed", agent_name, c.function.name)

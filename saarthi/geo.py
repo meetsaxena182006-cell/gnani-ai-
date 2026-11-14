@@ -78,10 +78,10 @@ OVERPASS = ["https://overpass-api.de/api/interpreter", "https://overpass.kumi.sy
             "https://overpass.private.coffee/api/interpreter", "https://maps.mail.ru/osm/tools/overpass/api/interpreter"]
 
 
-async def _overpass(c, query: str):
+async def _overpass(c, query: str, mirrors: int = 4):
     """POST to the first Overpass mirror that answers."""
     err = None
-    for url in OVERPASS:
+    for url in OVERPASS[:mirrors]:
         try:
             r = await c.post(url, data={"data": query}, headers={"User-Agent": "saarthi-fleet-demo/1.0"})
             if r.status_code == 200 and r.text.lstrip().startswith("{"):
@@ -92,13 +92,60 @@ async def _overpass(c, query: str):
     raise err
 
 
+NOMINATIM_PHRASES = {"mechanic": ["car repair", "mechanic", "garage"], "tyre": ["tyres", "car repair"],
+                     "fuel": ["fuel"], "hospital": ["hospital", "clinic"], "police": ["police"],
+                     "dhaba": ["restaurant", "fast food"]}
+_overpass_down_until = 0.0
+_places_cache: dict[str, tuple[float, list]] = {}
+
+
+async def _nominatim(kind: str, lat: float, lon: float, radius_m: int, limit: int) -> list[dict]:
+    """Backup place search (OpenStreetMap Nominatim, special phrases inside a box around the truck)."""
+    d = max(0.05, radius_m / 111000)
+    box = f"{lon - d},{lat + d},{lon + d},{lat - d}"
+    els, seen = [], set()
+    async with httpx.AsyncClient(headers={"User-Agent": "saarthi-fleet-demo/1.0"}, timeout=httpx.Timeout(10.0)) as c:
+        for phrase in NOMINATIM_PHRASES.get(kind, NOMINATIM_PHRASES["mechanic"]):
+            r = await c.get("https://nominatim.openstreetmap.org/search",
+                            params={"q": phrase, "format": "jsonv2", "limit": 20, "viewbox": box, "bounded": 1,
+                                    "extratags": 1})
+            if r.status_code != 200:
+                continue
+            for x in r.json():
+                if x.get("osm_id") in seen:
+                    continue
+                seen.add(x.get("osm_id"))
+                ex = x.get("extratags") or {}
+                els.append({"lat": float(x["lat"]), "lon": float(x["lon"]),
+                            "tags": {"name": x.get("name") or phrase.title(), "phone": ex.get("phone") or ex.get("contact:phone")}})
+            if len(els) >= limit:
+                break
+    return rank_places(els, lat, lon, limit)
+
+
 async def nearby(kind: str, lat: float, lon: float, radius_m: int = 15000, limit: int = 5) -> list[dict]:
-    query = build_overpass_query(kind, lat, lon, radius_m)
-    async with httpx.AsyncClient(headers=UA, timeout=TIMEOUT) as c:
-        r = await _overpass(c, query)
-        r.raise_for_status()
-        elements = r.json().get("elements", [])
-    return rank_places(elements, lat, lon, limit)
+    """Nearest help. Overpass first; when the public Overpass servers are overloaded, Nominatim (cached 15 min)."""
+    import time as _t
+    global _overpass_down_until
+    key = f"{kind}:{round(lat, 2)}:{round(lon, 2)}:{radius_m}"
+    hit = _places_cache.get(key)
+    if hit and _t.time() - hit[0] < 900:
+        return hit[1][:limit]
+    res: list[dict] = []
+    if _t.time() > _overpass_down_until:
+        try:
+            async with httpx.AsyncClient(headers=UA, timeout=httpx.Timeout(6.0)) as c:
+                r = await _overpass(c, build_overpass_query(kind, lat, lon, radius_m), mirrors=2)
+                res = rank_places(r.json().get("elements", []), lat, lon, limit)
+        except Exception:
+            _overpass_down_until = _t.time() + 600
+    if not res:
+        try:
+            res = await _nominatim(kind, lat, lon, radius_m, limit)
+        except Exception:
+            res = []
+    _places_cache[key] = (_t.time(), res)
+    return res
 
 
 def rank_places(elements: list[dict], lat: float, lon: float, limit: int = 5) -> list[dict]:
@@ -229,6 +276,60 @@ WMO = {0: "clear", 1: "mostly clear", 2: "partly cloudy", 3: "overcast", 45: "fo
        80: "showers", 81: "showers", 82: "violent showers", 95: "thunderstorm", 96: "thunderstorm+hail",
        99: "thunderstorm+hail"}
 
+# ---------------- Open-Meteo with cache (shared cloud IPs get rate-limited) + MET Norway backup ----------------
+_meteo_cache: dict[str, tuple[float, dict]] = {}
+
+
+async def _meteo(params: dict, ttl: float = 900) -> dict:
+    import time as _t
+    p = dict(params)
+    p["latitude"], p["longitude"] = round(float(p["latitude"]), 2), round(float(p["longitude"]), 2)
+    key = repr(sorted(p.items()))
+    hit = _meteo_cache.get(key)
+    if hit and _t.time() - hit[0] < ttl:
+        return hit[1]
+    last = None
+    for attempt in range(2):
+        try:
+            async with httpx.AsyncClient(headers=UA, timeout=TIMEOUT) as c:
+                r = await c.get("https://api.open-meteo.com/v1/forecast", params=p)
+                r.raise_for_status()
+                js = r.json()
+            _meteo_cache[key] = (_t.time(), js)
+            if len(_meteo_cache) > 2000:
+                _meteo_cache.clear()
+            return js
+        except Exception as e:
+            last = e
+            import asyncio as _aio
+            await _aio.sleep(1.5)
+    if hit:                      # stale is better than nothing
+        return hit[1]
+    raise last
+
+
+_MET_CODE = [("thunder", 95), ("fog", 45), ("heavyrain", 65), ("heavysleet", 65), ("rainshowers", 80), ("rain", 61),
+             ("sleet", 61), ("snow", 71), ("cloudy", 3), ("partlycloudy", 2), ("fair", 1), ("clearsky", 0)]
+
+
+async def _met_norway(lat: float, lon: float) -> dict:
+    """Backup weather (api.met.no, free, no key): shaped like Open-Meteo's 'current' block."""
+    async with httpx.AsyncClient(headers={"User-Agent": "saarthi-fleet-demo/1.0 github.com/meetsaxena182006-cell/gnani-ai-"},
+                                 timeout=TIMEOUT) as c:
+        r = await c.get("https://api.met.no/weatherapi/locationforecast/2.0/compact",
+                        params={"lat": round(lat, 3), "lon": round(lon, 3)})
+        r.raise_for_status()
+        ts = r.json()["properties"]["timeseries"][0]["data"]
+    det = ts["instant"]["details"]
+    nxt = ts.get("next_1_hours") or ts.get("next_6_hours") or {}
+    sym = (nxt.get("summary") or {}).get("symbol_code", "")
+    code = next((c for k, c in _MET_CODE if k in sym), 1)
+    return {"current": {"temperature_2m": det.get("air_temperature"), "weather_code": code,
+                        "wind_speed_10m": round((det.get("wind_speed") or 0) * 3.6, 1),
+                        "precipitation": (nxt.get("details") or {}).get("precipitation_amount", 0),
+                        "visibility": 500 if code == 45 else None},
+            "hourly": {}, "source": "MET Norway"}
+
 
 async def weather(lat: float, lon: float) -> dict:
     params = {
@@ -236,21 +337,22 @@ async def weather(lat: float, lon: float) -> dict:
         "current": "temperature_2m,precipitation,weather_code,wind_speed_10m,visibility",
         "hourly": "precipitation_probability,visibility,weather_code",
     }
-    async with httpx.AsyncClient(headers=UA, timeout=TIMEOUT) as c:
-        r = await c.get("https://api.open-meteo.com/v1/forecast", params=params)
-        r.raise_for_status()
-        js = r.json()
-    return assess_weather(js)
+    try:
+        js = await _meteo(params, ttl=600)
+        src = "Open-Meteo"
+    except Exception:
+        js = await _met_norway(lat, lon)
+        src = "MET Norway"
+    out = assess_weather(js)
+    out["source"] = src
+    return out
 
 
 async def forecast_hourly(lat: float, lon: float, days: int = 3) -> dict:
     """Raw hourly forecast (IST) for a point: used by the trip planner to test many departure times offline."""
     params = {"latitude": lat, "longitude": lon, "timezone": "Asia/Kolkata", "forecast_days": days,
               "hourly": "precipitation_probability,precipitation,visibility,weather_code,temperature_2m,wind_speed_10m"}
-    async with httpx.AsyncClient(headers=UA, timeout=TIMEOUT) as c:
-        r = await c.get("https://api.open-meteo.com/v1/forecast", params=params)
-        r.raise_for_status()
-        return r.json()
+    return await _meteo(params)
 
 
 async def overpass_along(points: list[tuple[float, float]], kinds: tuple[str, ...] = ("fuel", "dhaba"),
@@ -275,10 +377,7 @@ async def forecast_at(lat: float, lon: float, hours_ahead: float) -> dict:
     """Weather expected at a point when the truck reaches it (hourly forecast, up to 48 h)."""
     params = {"latitude": lat, "longitude": lon, "timezone": "Asia/Kolkata", "forecast_days": 2,
               "hourly": "precipitation_probability,precipitation,visibility,weather_code,temperature_2m,wind_speed_10m"}
-    async with httpx.AsyncClient(headers=UA, timeout=TIMEOUT) as c:
-        r = await c.get("https://api.open-meteo.com/v1/forecast", params=params)
-        r.raise_for_status()
-        js = r.json()
+    js = await _meteo(params)
     return assess_hour(js, hours_ahead)
 
 
