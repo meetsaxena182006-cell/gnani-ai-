@@ -204,7 +204,9 @@ def _fleet_tools(fleet_id: int) -> list[Tool]:
         v = find_vehicle(vehicle_code)
         t = db.active_trip(v["id"])
         if not t:
-            return {"error": "no active trip; start a trip first"}
+            busy = [x["code"] for x in vehicles() if db.active_trip(x["id"])]
+            return {"error": f"{vehicle_code} has no active trip, so there is no tracking link. Do NOT make up a link.",
+                    "trucks_on_trip_now": busy}
         return {"link": f"{settings.public_base_url}/track/{t['track_token']}",
                 "note": "Share this with the client; it shows only this truck's live position for this trip."}
 
@@ -430,6 +432,7 @@ Your job is that NOTHING is missed. When the owner asks if all is well, call fle
 then only the things that need attention. If a driver missed something (a toll, diesel, a document), use
 message_driver to ask the driver politely through his companion.
 Rules:
+- Never write a web link or phone number that a tool did not return word for word.
 - Live facts only: every number, place name and weather word must come from a tool result. Never invent towns,
   sections or weather that a tool did not return; if weather was not fetched, say so.
 - ALWAYS use tools for facts and numbers. Never invent money figures, locations or statuses.
