@@ -495,7 +495,9 @@ async def links_page(req: web.Request) -> web.Response:
 
 
 async def health(req: web.Request) -> web.Response:
-    return web.json_response({"ok": True, "live_companions": len(bus.live), "ai": ai_ready(),
+    from .config import llm_providers, reasoning_providers
+    names = sorted({p["name"].split(":")[0] for p in llm_providers()} | {p["name"] for p in reasoning_providers()})
+    return web.json_response({"ok": True, "live_companions": len(bus.live), "ai": ai_ready(), "ai_providers": names,
                               "voice": bool(settings.gnani_api_key) or settings.speech_mode != "gnani"})
 
 

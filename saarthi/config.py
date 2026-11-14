@@ -57,8 +57,15 @@ KNOWN = {  # key prefix -> provider: base URL, fast talking models (in order), r
 def _extra_keys() -> list[tuple]:
     """EXTRA_LLM_KEYS = comma-separated keys from Groq / NVIDIA / OpenRouter; the provider is detected from the prefix.
     One Render variable instead of a dozen. Returns (name, key, base_url, fast_models, reasoning_model)."""
+    import re as _re
+    raw = ""
+    for name in ("EXTRA_LLM_KEYS", "EXTRA_LLM_KEY", "EXTRA_KEYS", "NVIDIA_API_KEY", "OPENROUTER_API_KEY", "GROQ_API_KEY2"):
+        raw += "," + os.getenv(name, "")
     out, n = [], {}
-    for k in _list("EXTRA_LLM_KEYS", ""):
+    # tolerate paste mistakes: spaces, quotes, new lines, semicolons, "key=" labels
+    toks = [t.strip().strip("'\"") for t in _re.split(r"[\s,;|]+", raw) if t.strip()]
+    toks = [t.split("=", 1)[1] if "=" in t and not t.startswith(("gsk_", "nvapi-", "sk-or-")) else t for t in toks]
+    for k in dict.fromkeys(toks):
         for pre, (name, url, fast, reason) in KNOWN.items():
             if k.startswith(pre):
                 n[name] = n.get(name, 0) + 1
