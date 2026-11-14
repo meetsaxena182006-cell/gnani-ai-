@@ -52,7 +52,7 @@ def providers() -> list[tuple[object, str, str]]:
         _providers = []
         for p in cfg:
             c = clients.setdefault((p["api_key"], p["base_url"]), AsyncOpenAI(
-                api_key=p["api_key"], base_url=p["base_url"], timeout=40 if "nvidia" in p["base_url"] else 25, max_retries=0))
+                api_key=p["api_key"], base_url=p["base_url"], timeout=40 if "nvidia" in p["base_url"] else 12 if "generativelanguage" in p["base_url"] else 25, max_retries=0))
             _providers.append((c, p["model"], p["name"]))
             _tier[p["name"]] = p.get("tier", 5)
     return _providers
@@ -80,9 +80,12 @@ def _cooldown(name: str, e: Exception) -> None:
     if code == 429 or "429" in msg[:20]:
         m = _re.search(r"try again in ([\d.]+)\s*(ms|s)", msg)
         wait = (float(m.group(1)) / (1000 if m.group(2) == "ms" else 1)) if m else 20.0
-        _cool[name] = _t.time() + min(wait + 0.5, 60)
+        daily = "per day" in msg or "tokens per d" in msg   # daily quota gone: don't retry it every 20 s
+        _cool[name] = _t.time() + (1800 if daily else min(wait + 0.5, 60))
     elif code in (400, 401, 403, 404):      # retired model / bad key: don't waste time on it for a while
         _cool[name] = _t.time() + 1800
+    elif "timed out" in msg.lower() or "timeout" in type(e).__name__.lower():
+        _cool[name] = _t.time() + 300       # a provider that hangs: skip it for 5 min instead of waiting again
 
 
 async def _complete(messages: list[dict], tools: list["Tool"], agent_name: str):
