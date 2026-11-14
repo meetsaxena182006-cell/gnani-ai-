@@ -160,7 +160,7 @@ async def prewarm_once() -> None:
         await asyncio.sleep(2)     # be gentle with the free public map/weather servers
 
 
-async def prewarm_forever(every_min: int = 45) -> None:
+async def prewarm_forever(every_min: int = 25) -> None:
     await asyncio.sleep(5)
     while True:
         import time
