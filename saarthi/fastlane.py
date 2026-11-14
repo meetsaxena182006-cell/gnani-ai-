@@ -107,6 +107,33 @@ def route_reply(plan: dict, q: dict, label: str, hi: bool) -> str:
 _plan_memo: dict = {}
 
 
+def owner_papers(fleet: dict, hi: bool) -> str:
+    """Expired / expiring-in-30-days documents of the whole fleet, straight from the database."""
+    from datetime import date
+    today = date.today().isoformat()
+    in30 = date.fromordinal(date.today().toordinal() + 30).isoformat()
+    rows = db.q("SELECT v.code, d.doc_type, d.expiry_date FROM documents d JOIN vehicles v ON v.id=d.vehicle_id "
+                "WHERE v.fleet_id=? AND d.expiry_date<=? ORDER BY d.expiry_date", (fleet["id"], in30))
+    if not rows:
+        return "अगले 30 दिन में किसी गाड़ी के कागज़ ख़त्म नहीं हो रहे।" if hi else "No documents expire in the next 30 days."
+    gone = [r for r in rows if r["expiry_date"] < today]
+    soon = [r for r in rows if r["expiry_date"] >= today]
+    if hi:
+        out = []
+        if gone:
+            out.append("ख़त्म हो चुके: " + ", ".join(f"{r['code']} का {r['doc_type']} ({r['expiry_date']})" for r in gone)
+                       + " — यह गाड़ी नया लोड नहीं ले सकती जब तक renew न हो")
+        if soon:
+            out.append("30 दिन में ख़त्म: " + ", ".join(f"{r['code']} का {r['doc_type']} ({r['expiry_date']})" for r in soon))
+        return "। ".join(out) + "।"
+    out = []
+    if gone:
+        out.append("Expired: " + ", ".join(f"{r['code']} {r['doc_type']} ({r['expiry_date']})" for r in gone))
+    if soon:
+        out.append("Expiring within 30 days: " + ", ".join(f"{r['code']} {r['doc_type']} ({r['expiry_date']})" for r in soon))
+    return ". ".join(out) + "."
+
+
 async def owner_fast(fleet: dict, text: str) -> str | None:
     """Instant answer for a route/trip-cost question, or None to let the AI agent handle it."""
     import os
@@ -114,6 +141,8 @@ async def owner_fast(fleet: dict, text: str) -> str | None:
         return None
     q = parse_route(text)
     if not q:
+        if _PAPERS.search(text) and not _cities_in(text):
+            return owner_papers(fleet, _hindi(text))
         return None
     vtype, label = "truck_10w", ""
     if q["vehicle"]:

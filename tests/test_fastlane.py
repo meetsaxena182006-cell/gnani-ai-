@@ -53,3 +53,10 @@ async def test_driver_fast_lane_leaves_emergencies_and_other_languages_to_the_ag
 def test_ahead_is_not_fire():
     assert not fastlane._EMERGENCY.search("आगे मौसम कैसा है?")
     assert fastlane._EMERGENCY.search("गाड़ी में आग लग गई")
+
+
+async def test_owner_papers_fast(fresh):
+    from saarthi import db
+    f = dict(db.one("SELECT * FROM fleets WHERE code='MEWAR'"))
+    out = await fastlane.owner_fast(f, "किस गाड़ी के कागज़ जल्दी ख़त्म हो रहे हैं?")
+    assert out and "MW-T" in out
