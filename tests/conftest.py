@@ -63,7 +63,7 @@ import pytest as _pytest
 def _fresh_live_caches():
     """Each test starts with empty live-data caches (they are module-level for speed in production)."""
     from saarthi import geo, planner, tolls
-    for c in (geo._route_cache, geo._along_cache, geo._geo_cache, geo._met_hourly_cache, geo._meteo_cache,
+    for c in (geo._route_cache, geo._along_cache, geo._places_good, geo._places_cache, geo._geo_cache, geo._met_hourly_cache, geo._meteo_cache,
               planner._cum_cache, planner._sim_memo, tolls._on_route_cache):
         c.clear()
     geo._overpass_down_until = 0.0

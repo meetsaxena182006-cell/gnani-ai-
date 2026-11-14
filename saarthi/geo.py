@@ -185,8 +185,17 @@ async def nearby(kind: str, lat: float, lon: float, radius_m: int = 15000, limit
             res = await _nominatim(kind, lat, lon, radius_m, limit)
         except Exception:
             res = []
+    if res:
+        _places_good[key] = (_t.time(), res)
+    else:   # public servers busy right now: the last real result for this spot (shops don't move) beats nothing
+        good = _places_good.get(key)
+        if good and _t.time() - good[0] < 48 * 3600:
+            res = good[1]
     _places_cache[key] = (_t.time(), res)
-    return res
+    return res[:limit]
+
+
+_places_good: dict = {}
 
 
 def rank_places(elements: list[dict], lat: float, lon: float, limit: int = 5) -> list[dict]:

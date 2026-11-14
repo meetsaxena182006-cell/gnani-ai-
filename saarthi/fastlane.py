@@ -216,7 +216,7 @@ async def driver_fast(v: dict, text: str) -> str | None:
                 say += f" Sabse paas: {near[0]['name']}, {near[0]['km']} km."
             return say
         if _FATIGUE.search(text):
-            r = await asyncio.wait_for(tools["find_help"](kind="dhaba"), 10)
+            r = await asyncio.wait_for(tools["find_help"](kind="dhaba"), 6)
             res = r.get("results") or []
             say = "Boss, neend mein gaadi bilkul nahi. 15-20 minute ruk ke chai pi lijiye, mooh pe paani maariye."
             if res:
@@ -272,6 +272,7 @@ async def prewarm_once() -> None:
                 await asyncio.wait_for(geo.nearby(kind, v["last_lat"], v["last_lon"]), 20)
             except Exception:
                 pass
+            await asyncio.sleep(1.5)   # Nominatim usage policy: max 1 request per second
         try:
             await asyncio.wait_for(geo.weather(v["last_lat"], v["last_lon"]), 15)
         except Exception:
