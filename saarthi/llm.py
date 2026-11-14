@@ -46,12 +46,15 @@ def providers() -> list[tuple[object, str, str]]:
         from .config import llm_providers
         cfg = llm_providers() or [{"name": "default", "api_key": settings.llm_api_key or "missing",
                                    "base_url": settings.llm_base_url, "model": settings.llm_model}]
-        # Groq (fast, rarely busy) answers first; Gemini models are the backup. LLM_FIRST=gemini to reverse.
-        if os.getenv("LLM_FIRST", "fast") != "gemini":
-            cfg = sorted(cfg, key=lambda p: "generativelanguage.googleapis.com" in p["base_url"])
-        _providers = [(AsyncOpenAI(api_key=p["api_key"], base_url=p["base_url"], timeout=30, max_retries=0),
-                       p["model"], p["name"])
-                      for p in cfg]
+        if os.getenv("LLM_FIRST", "fast") == "gemini":
+            cfg = sorted(cfg, key=lambda p: "generativelanguage.googleapis.com" not in p["base_url"])
+        clients: dict = {}
+        _providers = []
+        for p in cfg:
+            c = clients.setdefault((p["api_key"], p["base_url"]), AsyncOpenAI(
+                api_key=p["api_key"], base_url=p["base_url"], timeout=40 if "nvidia" in p["base_url"] else 25, max_retries=0))
+            _providers.append((c, p["model"], p["name"]))
+            _tier[p["name"]] = p.get("tier", 5)
     return _providers
 
 
@@ -66,6 +69,8 @@ def set_client(client) -> None:
 
 
 _cool: dict[str, float] = {}   # provider name -> time it may be used again (rate limit / retired model)
+_tier: dict[str, int] = {}
+_rr = [0]                      # round-robin counter: spread load over providers of the same tier
 
 
 def _cooldown(name: str, e: Exception) -> None:
@@ -86,7 +91,12 @@ async def _complete(messages: list[dict], tools: list["Tool"], agent_name: str):
     last_error = None
     for attempt in range(2):
         now = _t.time()
+        _rr[0] += 1
         ready = [p for p in providers() if _cool.get(p[2], 0) <= now]
+        tiers: dict = {}
+        for p in ready:
+            tiers.setdefault(_tier.get(p[2], 5), []).append(p)
+        ready = [q for t in sorted(tiers) for q in (tiers[t][_rr[0] % len(tiers[t]):] + tiers[t][:_rr[0] % len(tiers[t])])]
         if not ready:      # everyone is rate-limited: wait for the first one to free up (max 12 s), then try it
             soon = min(providers(), key=lambda p: _cool.get(p[2], 0))
             await _aio.sleep(max(0.0, min(12.0, _cool.get(soon[2], 0) - now)))
@@ -109,16 +119,32 @@ async def deep_reason(question: str, data: dict, role: str) -> str:
     from openai import AsyncOpenAI
     if _client is not None:
         client, model = _client, settings.llm_model
-    elif os.getenv("REASONING_API_KEY") and os.getenv("REASONING_BASE_URL") and os.getenv("REASONING_MODEL"):
-        client = AsyncOpenAI(api_key=os.environ["REASONING_API_KEY"], base_url=os.environ["REASONING_BASE_URL"], timeout=60)
-        model = os.environ["REASONING_MODEL"]
     else:
-        client, model, _ = providers()[0]
+        import time as _tm
+        from .config import reasoning_providers
+        client = model = None
+        chain = [(AsyncOpenAI(api_key=p["api_key"], base_url=p["base_url"], timeout=45, max_retries=0), p["model"], p["name"])
+                 for p in reasoning_providers() if _cool.get(p["name"], 0) <= _tm.time()]
     prompt = (f"You are the analyst for {role} of a small Indian trucking business. Think step by step, privately, "
               "then answer in at most 5 short sentences of simple Hinglish with the key numbers. Use ONLY the data "
               "given; if something needed is missing, say what is missing. Never invent numbers.\n\n"
               f"QUESTION: {question}\n\nDATA (JSON): {json.dumps(data, ensure_ascii=False, default=str)[:12000]}")
-    resp = await client.chat.completions.create(model=model, messages=[{"role": "user", "content": prompt}], temperature=0.1)
+    if _client is not None:
+        resp = await client.chat.completions.create(model=model, messages=[{"role": "user", "content": prompt}], temperature=0.1)
+        return (resp.choices[0].message.content or "").strip()
+    for client, model, name in chain:
+        try:
+            resp = await client.chat.completions.create(model=model, messages=[{"role": "user", "content": prompt}],
+                                                        temperature=0.1, max_tokens=900)
+            txt = (resp.choices[0].message.content or "").strip()
+            if txt:
+                log.info("deep_reason answered by %s", name)
+                return txt
+        except Exception as e:
+            _cooldown(name, e)
+            log.warning("reasoning provider %s failed: %s", name, str(e)[:160])
+    # no strong model free right now: the normal talking chain still answers
+    resp = await _complete([{"role": "user", "content": prompt}], [], "reasoning")
     return (resp.choices[0].message.content or "").strip()
 
 

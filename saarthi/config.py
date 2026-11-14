@@ -46,34 +46,76 @@ class Settings:
     moving_speed_kmph: float = float(os.getenv("MOVING_SPEED_KMPH", "8"))
 
 
+KNOWN = {  # key prefix -> provider: base URL, fast talking models (in order), reasoning model
+    "gsk_": ("groq", "https://api.groq.com/openai/v1", ["openai/gpt-oss-120b", "qwen/qwen3.8-27b", "openai/gpt-oss-20b"], None),
+    "nvapi-": ("nvidia", "https://integrate.api.nvidia.com/v1", ["nvidia/nemotron-3.5-lightning-30b-a3b"],
+               "nvidia/nemotron-3-ultra-550b-a55b"),
+    "sk-or-": ("openrouter", "https://openrouter.ai/api/v1", [], "nvidia/nemotron-3-ultra-550b-a55b:free"),
+}
+
+
+def _extra_keys() -> list[tuple]:
+    """EXTRA_LLM_KEYS = comma-separated keys from Groq / NVIDIA / OpenRouter; the provider is detected from the prefix.
+    One Render variable instead of a dozen. Returns (name, key, base_url, fast_models, reasoning_model)."""
+    out, n = [], {}
+    for k in _list("EXTRA_LLM_KEYS", ""):
+        for pre, (name, url, fast, reason) in KNOWN.items():
+            if k.startswith(pre):
+                n[name] = n.get(name, 0) + 1
+                out.append((f"{name}-x{n[name]}", k, url, fast, reason))
+    return out
+
+
 def llm_providers() -> list[dict]:
-    """Reasoning LLMs in priority order (OpenAI-compatible). Primary = LLM_*, fallback = LLM2_*.
-    E.g. primary: Gnani-provided LLM endpoint or self-hosted Evon (vLLM); fallback: Gemini/Groq."""
+    """Talking LLMs (OpenAI-compatible). Each has a 'tier': lower = tried first, and the app rotates between
+    providers of the same tier so one free-plan rate limit is never the bottleneck.
+    0: big fast model on every Groq key, 1: second Groq model, 2: small Groq model, 3: NVIDIA, 5: other, 8-9: Gemini."""
     out = []
-    for prefix in ("LLM", "LLM2", "LLM3"):
+    for prefix in ("LLM", "LLM2", "LLM3", "LLM4", "LLM5", "LLM6"):
         key, url, model = _secret(f"{prefix}_API_KEY"), os.getenv(f"{prefix}_BASE_URL"), os.getenv(f"{prefix}_MODEL")
         if prefix == "LLM" and key:   # primary: Gemini defaults when only the key is given
             url, model = url or settings.llm_base_url, model or settings.llm_model
         if key and url and model:
             out.append({"name": os.getenv(f"{prefix}_NAME", prefix.lower()), "api_key": key, "base_url": url, "model": model})
-    # Gemini models get busy (503) or retired (404): try sibling models on the same key before giving up
-    fallbacks = _list("LLM_FALLBACK_MODELS", "gemini-flash-latest,gemini-flash-lite-latest,gemini-3-flash-preview,gemini-2.5-flash")
-    extra = []
-    for p in out:
-        if "generativelanguage.googleapis.com" in p["base_url"]:
-            for m in fallbacks:
-                if all(m != q["model"] for q in out + extra if q["api_key"] == p["api_key"]):
-                    extra.append({**p, "name": f"{p['name']}:{m}", "model": m})
-    # Groq rate limits are per model: a sibling model on the same key keeps answering when one hits 429
-    groq_more = _list("GROQ_FALLBACK_MODELS", "meta-llama/llama-4-scout-17b-16e-instruct,openai/gpt-oss-20b,"
-                                      "llama-3.3-70b-versatile,moonshotai/kimi-k2-instruct-0905,qwen/qwen3-32b")
-    fast = []
+    for name, key, url, fast, _ in _extra_keys():
+        if fast and all(key != q["api_key"] for q in out):
+            out.append({"name": name, "api_key": key, "base_url": url, "model": fast[0]})
+    res = []
+    groq_more = _list("GROQ_FALLBACK_MODELS", "openai/gpt-oss-120b,qwen/qwen3.8-27b,openai/gpt-oss-20b")
+    gem_more = _list("LLM_FALLBACK_MODELS", "gemini-flash-latest,gemini-flash-lite-latest,gemini-3-flash-preview")
     for p in out:
         if "api.groq.com" in p["base_url"]:
-            for m in groq_more:
-                if all(m != q["model"] for q in out + fast if q["api_key"] == p["api_key"]):
-                    fast.append({**p, "name": f"{p['name']}:{m}", "model": m})
-    return out + fast + extra
+            models = [p["model"]] + [m for m in groq_more if m != p["model"]]
+            for t, m in enumerate(models):
+                res.append({**p, "name": p["name"] if m == p["model"] else f"{p['name']}:{m}", "model": m, "tier": min(t, 2)})
+        elif "nvidia.com" in p["base_url"]:
+            res.append({**p, "tier": 3})
+        elif "generativelanguage.googleapis.com" in p["base_url"]:
+            res.append({**p, "tier": 8})
+            for m in gem_more:
+                if m != p["model"]:
+                    res.append({**p, "name": f"{p['name']}:{m}", "model": m, "tier": 9})
+        else:
+            res.append({**p, "tier": 5})
+    seen, uniq = set(), []
+    for p in sorted(res, key=lambda p: p["tier"]):
+        if (p["api_key"], p["model"]) not in seen:
+            seen.add((p["api_key"], p["model"]))
+            uniq.append(p)
+    return uniq
 
+
+def reasoning_providers() -> list[dict]:
+    """Strong models for think_deeply / analyze_business: REASONING_* env first, then NVIDIA Nemotron Ultra,
+    then OpenRouter's free copy of it (50 requests/day on a free account)."""
+    out = []
+    for prefix in ("REASONING", "REASONING2"):
+        key, url, model = _secret(f"{prefix}_API_KEY"), os.getenv(f"{prefix}_BASE_URL"), os.getenv(f"{prefix}_MODEL")
+        if key and url and model:
+            out.append({"name": prefix.lower(), "api_key": key, "base_url": url, "model": model})
+    for name, key, url, _, reason in sorted(_extra_keys(), key=lambda x: x[0].startswith("openrouter")):
+        if reason:
+            out.append({"name": f"{name}-reasoning", "api_key": key, "base_url": url, "model": reason})
+    return out
 
 settings = Settings()
