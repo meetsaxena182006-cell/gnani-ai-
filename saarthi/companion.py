@@ -396,6 +396,16 @@ class CompanionGuard(_guard_base()):
                 return  # handled in code; do not send to the LLM
             if not text or not addressed(text, self.s.last_bot_speech):
                 return  # driver is talking to someone else; stay quiet
+            try:   # top driver needs (puncture, weather, sleepy, empty truck, papers): answered by code, instantly
+                from .fastlane import driver_fast
+                fast = await driver_fast(v, text)
+            except Exception as e:
+                log.warning("voice fast lane skipped: %s", e)
+                fast = None
+            if fast:
+                db.log_agent("system", f"driver:{self.s.code}", "message", {"text": fast, "vehicle": self.s.code, "voice": True})
+                await self.push_frame(TTSSpeakFrame(fast))
+                return
             self.s.turn.transcript = text
             self.s.turn.new_pending = False
             self.s.refresh_context(v)

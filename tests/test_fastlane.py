@@ -26,3 +26,30 @@ def test_price_in_other_forms_and_profit_without_price():
     assert fastlane.parse_route("Udaipur se Ahmedabad 20000 mein load mil raha hai, profit kitna?")["freight"] == 20000.0
     assert fastlane.parse_route("Jaipur se Delhi ₹45,000 me bhejna hai")["freight"] == 45000.0
     assert fastlane.parse_route("Jaipur se Delhi bhejna hai, munafa kitna hoga?") is None
+
+
+async def test_driver_fast_lane_answers_papers_and_weather(fresh, monkeypatch):
+    from saarthi import db, geo
+    v = db.one("SELECT * FROM vehicles WHERE code='MW-T3'")
+    out = await fastlane.driver_fast(dict(v), "mere kagaz theek hain?")
+    assert out and ("renew" in out or "valid" in out or "khatam" in out)
+
+    async def fake_weather(lat, lon):
+        return {"now": "fog", "temp_c": 14.2, "wind_kmph": 6, "warnings": ["FOG: low visibility"], "source": "test"}
+    monkeypatch.setattr(geo, "weather", fake_weather)
+    db.ex("UPDATE vehicles SET last_lat=24.6, last_lon=73.7 WHERE id=?", (v["id"],))
+    out = await fastlane.driver_fast(dict(db.vehicle(v["id"])), "आगे मौसम कैसा है?")
+    assert "कोहरा" in out and "14°C" in out
+
+
+async def test_driver_fast_lane_leaves_emergencies_and_other_languages_to_the_agent(fresh):
+    from saarthi import db
+    v = dict(db.one("SELECT * FROM vehicles WHERE code='MW-T1'"))
+    assert await fastlane.driver_fast(v, "accident ho gaya, chot lagi hai") is None
+    v["lang"] = "te-IN"
+    assert await fastlane.driver_fast(v, "mausam kaisa hai") is None
+
+
+def test_ahead_is_not_fire():
+    assert not fastlane._EMERGENCY.search("आगे मौसम कैसा है?")
+    assert fastlane._EMERGENCY.search("गाड़ी में आग लग गई")

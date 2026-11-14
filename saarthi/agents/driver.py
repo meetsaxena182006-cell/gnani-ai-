@@ -668,6 +668,9 @@ async def handle(v: dict, text: str) -> str:
     else:
         reply = await intercept(v, text)
         if reply is None:
+            from ..fastlane import driver_fast
+            reply = await driver_fast(v, text)
+        if reply is None:
             turn = Turn(text)
             reply = await run_agent(system_prompt(v, is_moving(v)), memory.get(f"drv:{v['id']}"), text,
                                     make_tools(v["id"], turn), agent_name=f"driver:{v['code']}")

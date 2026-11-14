@@ -169,7 +169,8 @@ async def nearby(kind: str, lat: float, lon: float, radius_m: int = 15000, limit
     global _overpass_down_until
     key = f"{kind}:{round(lat, 2)}:{round(lon, 2)}:{radius_m}"
     hit = _places_cache.get(key)
-    if hit and _t.time() - hit[0] < 900:
+    # places don't move: keep a found list 6 h; a failed/empty search only 1 min so the next ask retries
+    if hit and _t.time() - hit[0] < (6 * 3600 if hit[1] else 60):
         return hit[1][:limit]
     res: list[dict] = []
     if _t.time() > _overpass_down_until:
