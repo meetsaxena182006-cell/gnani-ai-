@@ -298,6 +298,7 @@ async def plan_trip(req: TripRequest, with_places: bool = True) -> dict:
     fastest = min(results, key=lambda x: (x[3]["total_h"], -x[0]))
     leave_now = max((x for x in results if x[2].depart == start), key=lambda x: x[0])
     plan = _describe(req, best, weather_used=bool(samples), traffic=r.get("traffic"))
+    plan["weather_summary"] = _weather_line(samples, best[2])
     if with_places:
         await _name_stops(plan)
     plan["alternatives"] = {"leave_now": _brief(leave_now), "fastest": _brief(fastest)}
@@ -311,6 +312,30 @@ def _brief(x) -> dict:
             "night_driving_h": round(sim.night_h, 1), "fog_h": round(sim.hazard_h.get("fog", 0), 1),
             "profit_estimate": round((sc["estimate"].get("profit_at_offer") or -sc["estimate"]["total_cost"])),
             "score": round(x[0])}
+
+
+def _weather_line(samples, sim) -> str:
+    """One honest line: what the live forecast says along the route while the truck is on it."""
+    if not samples:
+        return "Weather: live forecast not reachable right now"
+    src = {js.get("source", "Open-Meteo") for _, js in samples}
+    t0, t1 = sim.depart.astimezone(IST).strftime("%Y-%m-%dT%H:00"), sim.arrive.astimezone(IST).strftime("%Y-%m-%dT%H:00")
+    temps, rain, fog, wet = [], 0.0, 0, 0
+    for _, js in samples:
+        h = js.get("hourly", {})
+        for i, t in enumerate(h.get("time") or []):
+            if t0 <= t <= t1:
+                g = lambda k: (h.get(k) or [None] * (i + 1))[i]
+                if g("temperature_2m") is not None:
+                    temps.append(g("temperature_2m"))
+                rain = max(rain, g("precipitation") or 0)
+                fog += g("weather_code") in (45, 48)
+                wet += (g("weather_code") or 0) >= 51
+    if not temps:
+        return f"Weather ({'/'.join(sorted(src))}): forecast does not cover the whole trip yet"
+    sky = "fog likely at some hours" if fog else ("rain expected on some stretches" if wet else "no rain or fog expected")
+    return (f"Weather (live {'/'.join(sorted(src))} forecast at {len(samples)} points on the route): "
+            f"{round(min(temps))}-{round(max(temps))}°C, {sky}" + (f", max rain {rain} mm/h" if rain else ""))
 
 
 def _describe(req: TripRequest, x, weather_used: bool, traffic) -> dict:
@@ -399,6 +424,8 @@ def owner_summary(plan: dict, title: str) -> str:
     for s in plan["stops"]:
         lines.append(f"  • {s['time']} km {s['at_km']}: {s['kind'].replace('_', ' ')} {s['minutes']} min"
                      + (f" — {s['place']}" if s.get("place") else ""))
+    if plan.get("weather_summary"):
+        lines.append(plan["weather_summary"])
     risks = [f"night {plan['night_driving_h']} h"] if plan["night_driving_h"] else []
     risks += [f"{k.replace('_', ' ')} {v} h" for k, v in plan["weather_risk_h"].items()]
     if risks:
