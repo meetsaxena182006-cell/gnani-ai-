@@ -353,6 +353,36 @@ def simulated_call_line(name: str, phone: str | None = None) -> str:
     return (f"📞 {who} को कॉल लगाया {NOTE}। {name}: \"हाँ जी, लोकेशन भेज दीजिए, 20-25 मिनट में पहुँचता हूँ।\" (डेमो)")
 
 
+_RELAY = re.compile(r"(malik|maalik|मालिक|owner|seth|सेठ|office|ऑफिस|ऑफ़िस|दफ्तर)\s*(ji|जी)?\s*(ko|को|se|से|tak|तक)\s+"
+                    r"(.*?)\s*(bolo|bol do|bol dena|batao|bata do|bata dena|kaho|keh do|kah do|bhejo|बोलो|बोल दो|बोल देना|"
+                    r"बताओ|बता दो|बता देना|कहो|कह दो|कहना|भेजो)(.*)", re.I | re.S)
+_RELAY2 = re.compile(r"(malik|maalik|मालिक|owner|seth|सेठ|office|ऑफिस|ऑफ़िस)\s*(ji|जी)?\s*(ko|को)\s+"
+                     r"(bolo|bol do|batao|bata do|kaho|keh do|बोलो|बोल दो|बताओ|बता दो|कहो|कह दो)\s*(ki|कि)?\s*(.+)", re.I | re.S)
+_INCIDENT = re.compile(r"(टायर|tyre|tire|पंक्चर|puncture|kharab|ख़राब|खराब|accident|एक्सीडेंट|दुर्घटना|आग|fire|"
+                       r"chori|चोरी|लूट|police|पुलिस|emergency|इमरजेंसी)", re.I)
+
+
+async def driver_relay(v: dict, text: str) -> str | None:
+    """'Malik ko bolo …' — the Driver Agent passes the message to the CEO Agent / owner at once (no AI needed).
+    Breakdowns and emergencies are left to their own flow, which alerts the owner with location and help."""
+    if _CALL.search(text) or _INCIDENT.search(text):
+        return None
+    m2 = _RELAY2.search(text)
+    m = None if m2 else _RELAY.search(text)
+    if not (m or m2):
+        return None
+    msg = (m2.group(6) if m2 else (m.group(4) + " " + m.group(6))).strip(" ,.।-") or text.strip()
+    from .agents import ceo
+    from .bus import bus
+    f = db.fleet(v["fleet_id"])
+    name = v.get("driver_name") or "ड्राइवर"
+    db.log_agent(f"driver:{v['code']}", f"ceo:{f['code']}", "driver_message", {"message": msg})
+    o = ceo.owner_out(f, f"📩 {name} ({v['reg_label']}): {msg}")
+    if o:
+        await bus.send(o)
+    return f"✅ मालिक को भेज दिया: \"{msg}\"। जवाब आते ही आपको बता दूँगा।"
+
+
 async def driver_call(v: dict, text: str) -> str | None:
     """Driver asks to call someone: simulated, labelled call (no real dialling in the demo)."""
     if REAL_CALLS or not _CALL.search(text):

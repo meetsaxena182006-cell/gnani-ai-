@@ -688,6 +688,8 @@ async def handle(v: dict, text: str) -> str:
         if reply is None:
             reply = await intercept(v, text)
         if reply is None:
+            reply = await talkfirst.driver_relay(v, text)
+        if reply is None:
             reply = await talkfirst.driver_call(v, text)
         if reply is None:
             from ..fastlane import driver_fast

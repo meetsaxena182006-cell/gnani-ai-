@@ -29,6 +29,18 @@ def owner_out(fleet: dict, text: str, speak: str | None = None, **kw) -> Out | N
     return Out(chat_id=fleet["owner_chat_id"], text=text, speak=speak, channel=channel, **kw)
 
 
+def _ist(ts) -> str | None:
+    """DB times are UTC; the owner thinks in IST."""
+    if not ts:
+        return ts
+    from datetime import datetime, timedelta
+    try:
+        d = datetime.fromisoformat(str(ts).replace("Z", "").split("+")[0])
+        return (d + timedelta(hours=5, minutes=30)).strftime("%d %b %H:%M IST")
+    except Exception:
+        return ts
+
+
 # =============== events from Driver Agents ===============
 async def on_event(vehicle_id: int, kind: str, data: dict) -> str:
     """Route an event. Returns the routing decision (for logging/tests)."""
@@ -111,8 +123,9 @@ def _fleet_tools(fleet_id: int) -> list[Tool]:
                 "vehicle": v["code"], "reg": v["reg_label"], "driver": v["driver_name"],
                 "trip": f"{t['origin']} → {t['destination']}" if t else "no active trip",
                 "last_location": geo.maps_link(v["last_lat"], v["last_lon"]) if v["last_lat"] else "unknown",
-                "last_seen_utc": v["last_seen"], "speed_kmph": v["last_speed_kmph"],
-                "companion": "live" if v["id"] in bus.live else "offline",
+                "last_seen_ist": _ist(v["last_seen"]), "speed_kmph": v["last_speed_kmph"],
+                "reach_driver": "live voice call on now" if v["id"] in bus.live
+                else "driver app (message_driver reaches him in seconds; he is not on a live voice call)",
                 "open_incident": inc,
             })
         return rows

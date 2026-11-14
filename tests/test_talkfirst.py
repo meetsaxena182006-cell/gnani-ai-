@@ -61,3 +61,15 @@ async def test_driver_call_owner_is_simulated(fresh):
     out = await talkfirst.driver_call(v, "malik ko call lagao")
     assert "डेमो" in out
     assert await talkfirst.driver_call(v, "mausam kaisa hai") is None
+
+
+def test_driver_relay_and_junk_place_names():
+    import asyncio
+    from saarthi import talkfirst
+    from saarthi.geo import clean_place_name
+    assert clean_place_name("uniadmin", "mechanic").startswith("Mechanic")
+    assert clean_place_name("Contest Garage", "mechanic") == "Contest Garage"
+    assert talkfirst._RELAY2.search("मालिक को बोलो डीज़ल के लिए 5000 भेज दें").group(6).startswith("डीज़ल")
+    # breakdowns keep their own flow (alert with location + help), calls stay simulated calls
+    assert asyncio.run(talkfirst.driver_relay({"fleet_id": 1}, "मालिक को बोलो टायर फट गया")) is None
+    assert asyncio.run(talkfirst.driver_relay({"fleet_id": 1}, "मालिक को कॉल करो")) is None

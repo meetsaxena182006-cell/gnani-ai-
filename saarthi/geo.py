@@ -8,6 +8,7 @@ import math
 
 import os
 
+import re
 import httpx
 
 from .config import settings
@@ -191,8 +192,22 @@ async def nearby(kind: str, lat: float, lon: float, radius_m: int = 15000, limit
         good = _places_good.get(key)
         if good and _t.time() - good[0] < 48 * 3600:
             res = good[1]
+    res = [{**x, "name": clean_place_name(x.get("name"), kind)} for x in res]
     _places_cache[key] = (_t.time(), res)
     return res[:limit]
+
+
+KIND_LABEL = {"mechanic": "Mechanic / garage", "tyre": "Tyre / puncture shop", "fuel": "Petrol pump",
+              "hospital": "Hospital", "police": "Police station", "dhaba": "Dhaba / restaurant"}
+_JUNK = re.compile(r"(admin|(test|asdf|qwer|xxx|unnamed|untitled)|^[a-z]{1,2}$|^\W*$)", re.I)
+
+
+def clean_place_name(name: str | None, kind: str = "") -> str:
+    """OpenStreetMap sometimes has junk names (a mapper's username, 'test'): say what the place is instead."""
+    n = (name or "").strip()
+    if not n or _JUNK.search(n):
+        return KIND_LABEL.get(kind, "Shop") + " (map pin)"
+    return n
 
 
 _places_good: dict = {}
