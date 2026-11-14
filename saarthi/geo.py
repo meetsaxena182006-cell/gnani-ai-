@@ -393,11 +393,24 @@ async def weather(lat: float, lon: float) -> dict:
         "current": "temperature_2m,precipitation,weather_code,wind_speed_10m,visibility",
         "hourly": "precipitation_probability,visibility,weather_code",
     }
-    try:
-        js = await _meteo(params, ttl=600)
-        src = "Open-Meteo"
-    except Exception:
-        js = await _met_norway(lat, lon)
+    import asyncio as _aio
+    import time as _t
+    global _meteo_down_until
+    js = None
+    if _t.time() >= _meteo_down_until:
+        try:
+            js = await _aio.wait_for(_meteo(params, ttl=600), 5)
+            src = "Open-Meteo"
+        except Exception:
+            _meteo_down_until = _t.time() + 600
+    if js is None:
+        k = ("now", round(lat, 2), round(lon, 2))
+        hit = _met_hourly_cache.get(k)
+        if hit and _t.time() - hit[0] < 600:
+            js = hit[1]
+        else:
+            js = await _met_norway(lat, lon)
+            _met_hourly_cache[k] = (_t.time(), js)
         src = "MET Norway"
     out = assess_weather(js)
     out["source"] = src
