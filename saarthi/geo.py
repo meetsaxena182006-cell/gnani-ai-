@@ -409,10 +409,17 @@ async def forecast_hourly(lat: float, lon: float, days: int = 3) -> dict:
     params = {"latitude": lat, "longitude": lon, "timezone": "Asia/Kolkata", "forecast_days": days,
               "hourly": "precipitation_probability,precipitation,visibility,weather_code,temperature_2m,wind_speed_10m"}
     import asyncio as _aio
-    try:
-        return await _aio.wait_for(_meteo(params, ttl=7200), 6)
-    except Exception:
-        return await _met_norway_hourly(lat, lon)
+    import time as _t
+    global _meteo_down_until
+    if _t.time() >= _meteo_down_until:
+        try:
+            return await _aio.wait_for(_meteo(params, ttl=7200), 6)
+        except Exception:
+            _meteo_down_until = _t.time() + 600   # Open-Meteo refusing us (429 from shared cloud IPs): use backup
+    return await _met_norway_hourly(lat, lon)
+
+
+_meteo_down_until = 0.0
 
 
 _met_hourly_cache: dict = {}

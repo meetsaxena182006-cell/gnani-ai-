@@ -67,6 +67,7 @@ def _fresh_live_caches():
               planner._cum_cache, planner._sim_memo, tolls._on_route_cache):
         c.clear()
     geo._overpass_down_until = 0.0
+    geo._meteo_down_until = 0.0
     try:
         from saarthi import fastlane
         fastlane._plan_memo.clear()
