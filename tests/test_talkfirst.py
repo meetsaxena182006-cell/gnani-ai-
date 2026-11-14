@@ -73,3 +73,10 @@ def test_driver_relay_and_junk_place_names():
     # breakdowns keep their own flow (alert with location + help), calls stay simulated calls
     assert asyncio.run(talkfirst.driver_relay({"fleet_id": 1}, "मालिक को बोलो टायर फट गया")) is None
     assert asyncio.run(talkfirst.driver_relay({"fleet_id": 1}, "मालिक को कॉल करो")) is None
+
+
+def test_owner_relay_regex():
+    from saarthi import talkfirst
+    m = talkfirst._ORELAY.search("MW-T2 के ड्राइवर को बोलो अगले ढाबे पर खाना खा ले")
+    assert m and m.group(6).startswith("अगले")
+    assert talkfirst._ORELAY.search("किस गाड़ी के कागज़ ख़त्म हो रहे हैं?") is None

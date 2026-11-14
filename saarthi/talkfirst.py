@@ -411,6 +411,32 @@ async def driver_call(v: dict, text: str) -> str | None:
     return None
 
 
+_ORELAY = re.compile(r"(ड्राइवर|driver|ड्राईवर)\s*(ji|जी|sahab|साहब)?\s*(ko|को|se|से)\s+(bolo|bol do|batao|bata do|kaho|keh do|"
+                     r"बोलो|बोल दो|बताओ|बता दो|कहो|कह दो|कहना)\s*(ki|कि)?\s*(.+)", re.I | re.S)
+
+
+async def owner_relay(fleet: dict, text: str) -> str | None:
+    """'MW-T2 ke driver ko bolo …' — the CEO Agent passes the order to that truck's Driver Agent at once."""
+    if _CALL.search(text):
+        return None
+    m = _ORELAY.search(text)
+    if not m:
+        return None
+    low = text.lower()
+    trucks = db.q("SELECT * FROM vehicles WHERE fleet_id=?", (fleet["id"],))
+    hit = [v for v in trucks if v["code"].lower() in low or v["reg_label"].lower() in low
+           or (v.get("driver_name") and v["driver_name"].split()[0].lower() in low)]
+    if len(hit) != 1:
+        return None                       # which truck is unclear: let the AI ask
+    v, msg = hit[0], m.group(6).strip(" ,.।-")
+    if not msg:
+        return None
+    from .bus import bus, to_driver
+    await bus.send(to_driver(v, f"🏢 Office: {msg}", speak=f"बॉस, ऑफिस से संदेश: {msg}"))
+    db.log_agent(f"ceo:{fleet['code']}", f"driver:{v['code']}", "instruction", {"message": msg})
+    return f"✅ {v['code']} के ड्राइवर {_first(v.get('driver_name'))} को भेज दिया: \"{msg}\"। उनका जवाब आते ही यहाँ दिखेगा।"
+
+
 def owner_call(fleet: dict, text: str) -> str | None:
     """Owner asks to call a driver: simulated call, the 'answer' is built from the truck's live data."""
     if REAL_CALLS or not _CALL.search(text):
