@@ -167,6 +167,16 @@ async function ceoCall(){
 document.getElementById("talk").onclick = () => ceoCall().catch(e => { document.getElementById("vst").textContent = " ❌ " + e.message; vpc = null; document.getElementById("talk").textContent = "🎙️ CEO से बात करें"; });
 document.getElementById("links").href = "/links?k=" + encodeURIComponent(KEY || "");
 refresh(); setInterval(refresh, 15000); setInterval(conv, 2500); setTimeout(conv, 800);
+// the CEO Agent talks first: a briefing on open, then a nudge when the owner has been quiet for a while
+async function ceoHello(open){
+  try {
+    const fl = document.getElementById("fleet").value; if (!fl) return setTimeout(() => ceoHello(open), 1500);
+    const r = await api(`/api/ceo/hello?fleet=${encodeURIComponent(fl)}${open ? "&open=1" : ""}`);
+    if (r && r.text) { const chat = document.getElementById("chat");
+      chat.insertAdjacentHTML("beforeend", `<div class="bot">CEO Agent: ${r.text.replace(/</g,"&lt;")}</div>`); chat.scrollTop = 1e9; }
+  } catch(_) {}
+}
+setTimeout(() => ceoHello(true), 1200); setInterval(() => ceoHello(false), 20000);
 
 // ---- demo trip director ----
 let demoLine = null;

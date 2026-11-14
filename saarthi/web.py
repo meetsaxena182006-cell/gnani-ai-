@@ -272,6 +272,14 @@ async def api_ceo_chat(req: web.Request) -> web.Response:
     return web.json_response({"reply": reply})
 
 
+async def api_ceo_hello(req: web.Request) -> web.Response:
+    """The CEO Agent talks first: a briefing when the office opens, then nudges while the owner is quiet."""
+    _auth(req)
+    from . import talkfirst
+    f = db.one("SELECT * FROM fleets WHERE upper(code)=upper(?)", (req.query.get("fleet", ""),)) or db.one("SELECT * FROM fleets")
+    return web.json_response({"text": talkfirst.owner_poll(f, req.query.get("open") == "1")})
+
+
 async def api_fastag_statement(req: web.Request) -> web.Response:
     """Owner uploads the FASTag statement (CSV) from the bank / IHMCL portal."""
     _auth(req)
@@ -420,6 +428,8 @@ async def api_driver_feed(req: web.Request) -> web.Response:
     if not v:
         raise web.HTTPUnauthorized()
     from .demo_drive import is_simulated
+    from . import talkfirst
+    talkfirst.on_driver_poll(v, int(req.query.get("since", "0") or 0))   # Saarthi talks first / nudges when quiet
     code = v["code"]
     rows = _rows("SELECT id, ts, from_agent, to_agent, kind, payload FROM agent_log WHERE id>? AND "
                  "((kind='message' AND to_agent=?) OR (kind='driver_said' AND from_agent=?)) ORDER BY id DESC LIMIT 80",
@@ -516,6 +526,7 @@ def build_app() -> web.Application:
         web.get("/film/audio/{n}.ogg", film_audio),
         web.get("/api/fleet", api_fleet),
         web.post("/api/ceo/chat", api_ceo_chat),
+        web.get("/api/ceo/hello", api_ceo_hello),
         web.post("/api/fastag/statement", api_fastag_statement),
         web.post("/api/fastag/sms", api_fastag_sms),
         web.post("/api/pod", api_pod),

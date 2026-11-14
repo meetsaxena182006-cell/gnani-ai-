@@ -444,8 +444,14 @@ Rules:
 
 async def handle_owner(fleet: dict, text: str) -> str:
     key = f"owner:{fleet['id']}"
+    from .. import talkfirst
     from ..fastlane import owner_fast
-    fast = await owner_fast(fleet, text)      # route / trip-cost questions: answered instantly from live caches
+    talkfirst.owner_talked(fleet)
+    req = talkfirst.take_offer(f"own:{fleet['id']}", text)
+    if req == "":
+        return "ठीक है मालिक, जब कहेंगे तब कर दूँगा।"
+    text = req or text                         # "haan" to the CEO's own offer = run that offer now
+    fast = talkfirst.owner_call(fleet, text) or await owner_fast(fleet, text)      # route / trip-cost questions: answered instantly from live caches
     if fast:
         memory.add(key, "user", text)
         memory.add(key, "assistant", fast)

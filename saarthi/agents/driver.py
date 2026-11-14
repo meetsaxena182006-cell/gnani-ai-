@@ -99,6 +99,9 @@ async def intercept(v: dict, text: str) -> str | None:
         questions.pop(vid, None)
         if q["kind"] == "dial":
             if yn:
+                from ..talkfirst import REAL_CALLS, simulated_call_line
+                if not REAL_CALLS:
+                    return simulated_call_line(q["name"], q["phone"])
                 await bus.send(to_driver(v, f"📞 Calling {q['name']} {q['phone']}", actions=[dial_action(q["phone"], q["name"])],
                                          contacts=[(q["name"], q["phone"])]))
                 return f"{q['name']} ko call laga raha hoon."
@@ -297,6 +300,10 @@ def make_tools(vid: int, turn: Turn) -> list[Tool]:
         phone = re.sub(r"[^\d+]", "", phone or "")
         if phone not in allowed:
             return {"error": "This number did not come from a lookup; do not dial unknown numbers. Use find_help first."}
+        from ..talkfirst import REAL_CALLS, simulated_call_line
+        if not REAL_CALLS:
+            turn.final_override = simulated_call_line(allowed[phone], phone)
+            return {"dialing": allowed[phone], "simulated": True}
         await bus.send(to_driver(v(), f"📞 Calling {allowed[phone]} {phone}", actions=[dial_action(phone, allowed[phone])],
                                  contacts=[(allowed[phone], phone)]))
         return {"dialing": allowed[phone]}
@@ -666,7 +673,18 @@ async def handle(v: dict, text: str) -> str:
     if not text:
         reply = "Awaaz saaf nahi aayi, dobara boliye."
     else:
-        reply = await intercept(v, text)
+        from .. import talkfirst
+        reply = None
+        if not pending_entries(v["id"]) and not open_question(v["id"]):
+            req = talkfirst.take_offer(f"drv:{v['id']}", text)   # "haan" to Saarthi's own offer runs it
+            if req == "":
+                reply = "ठीक है बॉस, जब चाहिए बस बोल देना।"
+            elif req:
+                text = req
+        if reply is None:
+            reply = await intercept(v, text)
+        if reply is None:
+            reply = await talkfirst.driver_call(v, text)
         if reply is None:
             from ..fastlane import driver_fast
             reply = await driver_fast(v, text)
