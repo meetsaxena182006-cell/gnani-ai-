@@ -61,6 +61,10 @@ def parse_route(text: str) -> dict | None:
         f2 = _FREIGHT2.search(text)
         if f2:
             freight = float((f2.group(1) or f2.group(2)).replace(",", ""))
+    if freight is None:     # a bare amount like "45000" (not tonnes, not a truck number)
+        m = re.search(r"(?<![\w-])(\d{1,3}(?:,\d{2,3})+|\d{4,7})(?!\s*(?:km|किमी|टन|ton|kg))(?![\w-])", text)
+        if m:
+            freight = float(m.group(1).replace(",", ""))
     if freight is None and _PROFIT_Q.search(text):
         return None          # asks for profit but no price we can read: the AI agent asks / works it out
     v = _VEH.search(text)
@@ -186,6 +190,34 @@ def owner_month(fleet: dict, hi: bool) -> str:
                   if agreed else f"Cash in hand (received − spend) {inr(got - spend)}.")
 
 
+_ORDER = re.compile(r"(order|ऑर्डर|आर्डर|deal|डील|booking|बुकिंग|naya load|नया लोड|maal aaya|माल आया)", re.I)
+_WHEN = re.compile(r"(kal|कल|aaj|आज|parso|परसों|subah|सुबह|shaam|शाम|raat|रात|tomorrow|today|morning|evening)", re.I)
+
+
+def _order_meta(text: str) -> tuple[str, str | None]:
+    """Party name and ready date from 'Pune se Hyderabad 18 ton, 52000, Deccan Agro, kal subah'."""
+    from datetime import date, timedelta
+    party = ""
+    for seg in re.split(r"[,;।\n]", text):
+        seg = seg.strip(" .:-")
+        if seg and not re.search(r"\d", seg) and not _cities_in(seg) and not _ORDER.search(seg) and not _WHEN.search(seg) \
+                and 2 < len(seg) < 40:
+            party = re.sub(r"^(party|पार्टी|client|क्लाइंट)\s*[:-]?\s*", "", seg, flags=re.I)
+            break
+    if not party:
+        m = re.search(r"([A-Za-z][\w&.]*(?:\s+[A-Za-z][\w&.]*){0,2})\s+(?:ka|का|ki|की|ke|के)\s+(?:order|ऑर्डर|maal|माल|load|लोड)", text, re.I)
+        if m and not _cities_in(m.group(1)) and not re.search(r"\d", m.group(1)):
+            party = m.group(1).strip()
+    when = None
+    if re.search(r"(parso|परसों)", text, re.I):
+        when = (date.today() + timedelta(days=2)).isoformat()
+    elif re.search(r"(kal|कल|tomorrow)", text, re.I):
+        when = (date.today() + timedelta(days=1)).isoformat()
+    elif re.search(r"(aaj|आज|today)", text, re.I):
+        when = date.today().isoformat()
+    return party, when
+
+
 async def owner_fast(fleet: dict, text: str) -> str | None:
     """Instant answer for a route/trip-cost question, or None to let the AI agent handle it."""
     import os
@@ -232,7 +264,15 @@ async def owner_fast(fleet: dict, text: str) -> str | None:
             _plan_memo[mk] = (time.time(), plan)
     if "error" in plan:
         return None
-    return route_reply(plan, q, label, _hindi(text))
+    reply = route_reply(plan, q, label, _hindi(text))
+    if _ORDER.search(text) and not q["vehicle"]:      # a new customer order: save it, then quote it
+        from . import workspace
+        party, when = _order_meta(text)
+        o = await workspace.add_order(fleet, q["origin"].title(), q["destination"].title(), q["freight"], q["tonnes"], party, when)
+        if "load_id" in o:
+            reply = (f"✅ ऑर्डर #{o['load_id']} सेव किया" + (f" ({party})" if party else "") + (f", तैयार {when}" if when else "")
+                     + "। किस गाड़ी को दूँ? बोलिए 'ऑर्डर " + str(o["load_id"]) + " फलाँ गाड़ी को दो'।\n" + reply)
+    return reply
 
 
 # ---------------- driver fast lane: the questions a driver asks most, answered by code (no LLM round trip) ----------------
