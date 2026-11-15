@@ -78,12 +78,20 @@ form.row{display:flex;gap:8px}form.row input{flex:1}
 .kv{display:grid;grid-template-columns:130px 1fr;gap:6px 12px;font-size:13px}.kv div:nth-child(odd){color:var(--muted)}
 .mtoggle{display:none}
 /* ---- Jarvis home: voice first ---- */
+::selection{background:rgba(242,165,65,.35);color:#fff}
+*{scrollbar-width:thin;scrollbar-color:rgba(255,255,255,.18) transparent}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:8px}
 #v-home.on{display:flex}
+.hctl{display:flex;gap:14px;align-items:center;justify-content:center}
+.hstop{display:none;height:44px;padding:0 18px;border-radius:22px;border:1px solid rgba(255,255,255,.18);background:rgba(255,255,255,.06);color:var(--ink);
+  font:600 14px/1 inherit;cursor:pointer;align-items:center;gap:8px}.hstop.show{display:inline-flex}.hstop:hover{background:rgba(255,93,108,.18);border-color:#ff5d6c}
+.hmic{display:grid;place-items:center}
+.cleanbtn{font-size:12px;padding:4px 11px;border-radius:999px;border:1px dashed rgba(51,199,165,.6);color:var(--teal);background:transparent;cursor:pointer;text-decoration:none}
 #v-home{flex-direction:column;align-items:center;min-height:calc(100vh - 110px);position:relative;cursor:pointer;user-select:none}
 .hstrip{display:flex;gap:10px;flex-wrap:wrap;justify-content:center;margin:2px 0 6px}.hstrip .pill{font-size:12px;padding:4px 11px}
 .orbwrap{position:relative;width:min(300px,62vw);aspect-ratio:1;margin:18px auto 8px;display:grid;place-items:center}
 .orb{position:absolute;inset:18%;border-radius:50%;background:radial-gradient(circle at 35% 30%,#ffe2b0 0,#f2a541 28%,#e0643a 55%,#4a1d1d 100%);
-  box-shadow:0 0 60px rgba(242,165,65,.55),0 0 140px rgba(224,100,58,.35),inset 0 0 40px rgba(255,255,255,.25);transform:scale(calc(1 + var(--lvl,0)*.18));transition:transform .08s linear}
+  box-shadow:0 18px 50px rgba(224,100,58,.35),0 0 120px rgba(242,165,65,.22),inset 0 -12px 30px rgba(0,0,0,.25),inset 0 10px 30px rgba(255,255,255,.22);transform:scale(calc(1 + var(--lvl,0)*.16));transition:transform .12s cubic-bezier(.16,1,.3,1)}
 .ring{position:absolute;inset:0;border-radius:50%;border:1.5px solid rgba(242,165,65,.35);animation:spin 14s linear infinite}
 .ring.r2{inset:8%;border-style:dashed;border-color:rgba(51,199,165,.35);animation-duration:22s;animation-direction:reverse}
 .ring.r3{inset:-8%;border-color:rgba(90,169,255,.18);animation-duration:30s}
@@ -153,9 +161,10 @@ form.row{display:flex;gap:8px}form.row input{flex:1}
     <div class="hstate" id="hstate">सारथी तैयार है</div>
     <div class="hsub" id="hsub">…</div>
     <div class="hhint" id="hhint">👆 कहीं भी टैप करें — सारथी बोलेगा और आपकी बात सुनेगा</div>
-    <button class="hmic" id="hmic" title="Talk / stop">🎙️</button>
+    <div class="hctl"><button class="hmic" id="hmic" title="Talk to Saarthi" aria-label="Talk"><svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg></button>
+      <button class="hstop" id="hstop" title="Stop talking (Esc)"><svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="2"/></svg> रोकें</button></div>
     <div class="hchips" id="hchips"></div>
-    <div class="hbar"><input id="hq" placeholder="या लिखिए… e.g. उदयपुर से हरिद्वार, महेश की गाड़ी भेजो" autocomplete="off"><button class="btn pri" id="hsend">Send</button></div>
+    <div class="hbar"><input id="hq" placeholder="या लिखिए… e.g. उदयपुर से हरिद्वार, महेश की गाड़ी भेजो" autocomplete="off"><button class="btn pri" id="hsend" aria-label="Send"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg></button></div>
     <div class="hlog" id="hlog"></div>
   </section>
 
@@ -502,7 +511,10 @@ $("quick").innerHTML = ["sab theek hai? kuch miss to nahi?", "aaj sab gaadiyan k
   "Udaipur se Ahmedabad 16 ton, client 22000 de raha hai — profit?", "kaunsi gaadi ghaate mein hai?"].map(q => `<button class="btn sm" onclick="ask(this.textContent)">${esc(q)}</button>`).join("");
 async function ceoHello(open){ try { if (!F) return setTimeout(() => ceoHello(open), 1500);
   const r = await api(`/api/ceo/hello?fleet=${encodeURIComponent(F.code)}${open ? "&open=1" : ""}`);
-  if (r && r.text) { $("brief").textContent = r.text; bub("ai", r.text); if (open) homeGreet(r.text); } } catch(_) {} }
+  if (r && r.text) { if (!open && r.text === lastHello) return; lastHello = r.text; $("brief").textContent = r.text; bub("ai", r.text);
+    if (open) homeGreet(r.text);
+    else if ((location.hash === "#home" || !location.hash) && !vpc) { hSub(r.text); hLine("c", r.text); if (unlocked && !$("hstop").classList.contains("show")) say(r.text, true); } } } catch(_) {} }
+let lastHello = "";
 
 // ---------- conversations ----------
 let csince = 0, cfleet = "";
@@ -584,12 +596,21 @@ async function simDrive(code){ const r = await post("/api/ws/simulate", {fleet: 
 let VOICE = true, unlocked = false, playing = Promise.resolve(); try { VOICE = localStorage.getItem("saarthi_voice") !== "0"; } catch(_) {}
 function toggleVoice(){ VOICE = !VOICE; try { localStorage.setItem("saarthi_voice", VOICE ? "1" : "0"); } catch(_) {} $("voiceTog").textContent = VOICE ? "🔊 Voice on" : "🔇 Voice off"; }
 document.addEventListener("pointerdown", () => { unlocked = true; }, {once:true});
+let curAudio = null, spoke = false, sayGen = 0;
+function ttsParts(text){ const t = String(text).replace(/https?:\/\/\S+/g, "").replace(/[*#_`|>]/g, " ").replace(/\s+/g, " ").trim().slice(0, 700);
+  const out = []; let cur = ""; for (const s of t.split(/(?<=[।.!?])\s+/)) { if (cur && (cur + s).length > (out.length ? 220 : 110)) { out.push(cur); cur = ""; } cur += (cur ? " " : "") + s; }
+  if (cur) out.push(cur); return out; }
 function say(text, force){ if (!text || (!VOICE && !force) || vpc || (!unlocked && !force)) return;
-  const t = String(text).slice(0, 450);
-  playing = playing.then(async () => { try { const b = await fetch("/api/tts?text=" + encodeURIComponent(t), {headers:{"X-Saarthi-Key": KEY}}); if (!b.ok) return;
-    const a = new Audio(URL.createObjectURL(await b.blob())); curAudio = a; await a.play(); spoke = true; orbState("speak");
-    await new Promise(r => { a.onended = r; a.onerror = r; }); orbState(vpc ? "listen" : "idle"); } catch(_) { orbState(vpc ? "listen" : "idle"); } }); }
-let curAudio = null, spoke = false;
+  const gen = sayGen, parts = ttsParts(text);
+  // fetch every sentence at once (first one is short = starts speaking fast), play them in order
+  const blobs = parts.map(t => fetch("/api/tts?text=" + encodeURIComponent(t), {headers:{"X-Saarthi-Key": KEY}}).then(b => b.ok ? b.blob() : null).catch(() => null));
+  playing = playing.then(async () => { for (const pb of blobs) { if (gen !== sayGen) break; const bl = await pb; if (!bl || gen !== sayGen) continue;
+      try { const a = new Audio(URL.createObjectURL(bl)); curAudio = a; await a.play(); spoke = true; orbState("speak"); $("hstop").classList.add("show");
+        await new Promise(r => { a.onended = r; a.onerror = r; a.onpause = r; }); } catch(_) {} }
+    if (gen === sayGen) { orbState(vpc ? "listen" : "idle"); $("hstop").classList.remove("show"); } }); }
+function stopTalk(){ sayGen++; if (curAudio) { try { curAudio.pause(); } catch(_) {} } playing = Promise.resolve(); clearInterval(typing);
+  const t = $("hsub").dataset.full; if (t) $("hsub").firstChild && ($("hsub").firstChild.textContent = t);
+  $("hstop").classList.remove("show"); orbState(vpc ? "listen" : "idle"); }
 function jarvisTalk(){ startTalk(); }
 
 // ---------- voice call with the CEO (Gnani listens + speaks) ----------
@@ -605,7 +626,7 @@ async function ceoCall(){ const st = $("vst"), btn = $("talk");
   watchLevel(mic, "me"); orbState("think"); $("hstate").textContent = "जुड़ रहा है…";
   vpc.addTransceiver(mic.getAudioTracks()[0], {direction:"sendrecv"}); vpc.addTransceiver("video", {direction:"recvonly"});
   vpc.onconnectionstatechange = () => { const cs = vpc ? vpc.connectionState : "closed"; st.textContent = cs === "connected" ? "🟢 CEO is listening" : cs;
-    if (cs === "connected") { orbState("listen"); $("hmic").classList.add("on"); $("hmic").textContent = "⏹"; }
+    if (cs === "connected") { orbState("listen"); $("hmic").classList.add("on"); $("hmic").innerHTML = '<svg width="28" height="28" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>'; $("hmic").title = "End voice call"; }
     if (["failed","closed","disconnected"].includes(cs)) callEnded(cs === "failed" ? "आवाज़ का कनेक्शन नहीं बना — लिखकर पूछिए, मैं बोलकर जवाब दूँगा।" : ""); };
   await vpc.setLocalDescription(await vpc.createOffer());
   await new Promise(r => { if (vpc.iceGatheringState === "complete") r(); else { vpc.onicegatheringstatechange = () => vpc.iceGatheringState === "complete" && r(); setTimeout(r, 2500); } });
@@ -616,7 +637,7 @@ $("talk").onclick = () => ceoCall().catch(e => { $("vst").textContent = "❌ " +
 // ---------- Jarvis home: the partner talks first, you just speak ----------
 let AC = null, lvl = {me: 0, ceo: 0};
 function orbState(st){ const w = $("orbw"); w.className = "orbwrap st-" + st;
-  $("hstate").textContent = {idle:"सारथी तैयार है", listen:"🎙️ बोलिए — मैं सुन रहा हूँ", speak:"🔊 सारथी बोल रहा है", think:"सोच रहा हूँ…", off:"सारथी तैयार है"}[st] || ""; }
+  $("hstate").textContent = {idle:"सारथी तैयार है — बोलिए या टैप करें", listen:"बोलिए — मैं सुन रहा हूँ", speak:"सारथी बोल रहा है · रोकने के लिए Esc", think:"सोच रहा हूँ…", off:"सारथी तैयार है"}[st] || ""; }
 function watchLevel(stream, who){ try { AC ||= new (window.AudioContext || window.webkitAudioContext)(); const an = AC.createAnalyser(); an.fftSize = 512;
   AC.createMediaStreamSource(stream).connect(an); const buf = new Uint8Array(an.fftSize);
   (function tick(){ if (!vpc && who !== "tts") { lvl[who] = 0; $("orb").style.setProperty("--lvl", 0); return; }
@@ -625,30 +646,34 @@ function watchLevel(stream, who){ try { AC ||= new (window.AudioContext || windo
     $("orb").style.setProperty("--lvl", L2.toFixed(3));
     if (vpc && vpc.connectionState === "connected") orbState(lvl.ceo > 0.12 ? "speak" : "listen");
     requestAnimationFrame(tick); })(); } catch(_) {} }
-function callEnded(msg){ $("hmic").classList.remove("on"); $("hmic").textContent = "🎙️"; orbState("idle"); $("orb").style.setProperty("--lvl", 0); if (msg) hSub(msg); }
+function callEnded(msg){ $("hmic").classList.remove("on"); $("hmic").innerHTML = '<svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg>'; orbState("idle"); $("orb").style.setProperty("--lvl", 0); if (msg) hSub(msg); }
 let typing = null;
-function hSub(text, you){ const el = $("hsub"); clearInterval(typing); const t = String(text || "").replace(/[*#_`]/g, "").slice(0, 420); let i = 0;
+function hSub(text, you){ const el = $("hsub"); clearInterval(typing); const t = String(text || "").replace(/[*#_`|]/g, "").slice(0, 420); let i = 0; el.dataset.full = t;
   el.innerHTML = ""; const span = document.createElement("span"); if (you) span.className = "you"; el.appendChild(span);
-  typing = setInterval(() => { i += 2; span.textContent = t.slice(0, i); if (i >= t.length) clearInterval(typing); }, 22); }
+  typing = setInterval(() => { i += 4; span.textContent = t.slice(0, i); if (i >= t.length) clearInterval(typing); }, 22); }
 let hSeen = new Set(); function hLine(who, text){ const box = $("hlog"); if (!text || hSeen.has(who + text)) return; hSeen.add(who + text);
   box.insertAdjacentHTML("afterbegin", `<div class="l ${who}"><b>${who === "o" ? "आप" : "सारथी"}:</b> ${esc(String(text).slice(0, 300))}</div>`);
   while (box.children.length > 8) box.lastChild.remove(); }
 let greeted = "";
 function homeGreet(text){ greeted = text; hSub(text); hLine("c", text); orbState("idle");
   say(text, true); setTimeout(() => { $("hhint").style.display = (spoke || vpc) ? "none" : ""; }, 2500); }
-async function hAsk(text){ if (!text) return; hLine("o", text); hSub(text, true); orbState("think");
+async function hAsk(text){ if (!text) return; stopTalk(); hLine("o", text); hSub(text, true); orbState("think");
   try { const r = await post("/api/ceo/chat", {fleet: F.code, text}); const rep = r.reply || r.error || ""; hLine("c", rep); hSub(rep); bub("me", text); bub("ai", rep);
     orbState("idle"); say(rep, true); refresh(); } catch(e) { hSub("⚠ " + e.message); orbState("idle"); } }
-function startTalk(){ $("hhint").style.display = "none"; unlocked = true; if (!vpc) $("talk").click(); }
+function startTalk(){ $("hhint").style.display = "none"; unlocked = true; stopTalk(); if (!vpc) $("talk").click(); }
 $("v-home").addEventListener("click", e => { if (e.target.closest("input,button,.hbar,.hchips,.hlog,a,select")) return; if (!vpc) startTalk(); });
-$("hmic").onclick = e => { e.stopPropagation(); $("hhint").style.display = "none"; $("talk").click(); };
+$("hmic").onclick = e => { e.stopPropagation(); stopTalk(); $("hhint").style.display = "none"; unlocked = true; $("talk").click(); };
+$("hstop").onclick = e => { e.stopPropagation(); stopTalk(); };
+document.addEventListener("keydown", e => { if (e.key === "Escape") stopTalk(); });
+$("orbw").addEventListener("click", e => { if ($("hstop").classList.contains("show")) { e.stopPropagation(); stopTalk(); } });
 $("hsend").onclick = () => { const t = $("hq").value.trim(); $("hq").value = ""; hAsk(t); };
 $("hq").addEventListener("keydown", e => { if (e.key === "Enter") $("hsend").click(); });
 $("hchips").innerHTML = ["आज का प्लान बताओ", "नई ट्रिप: उदयपुर से हरिद्वार", "सब ठीक है? कुछ miss तो नहीं?", "इस महीने का हिसाब", "खाली गाड़ी के लिए लोड ढूँढो", "कौनसे कागज़ खत्म हो रहे हैं?"]
   .map(q => `<button class="btn sm">${esc(q)}</button>`).join("");
 $("hchips").querySelectorAll("button").forEach(b => b.onclick = e => { e.stopPropagation(); hAsk(b.textContent.startsWith("नई ट्रिप") ? "उदयपुर से हरिद्वार नई ट्रिप लगानी है — कौनसी गाड़ी खाली है?" : b.textContent); });
 function homeStrip(){ if (!F) return; const vs = F.vehicles, mv = vs.filter(v => v.speed > 3).length, is = vs.filter(v => v.issue).length;
-  $("hstrip").innerHTML = `<span class="pill ${F.kind === "real" ? "ok" : "warn"}">${esc(F.name)}${F.kind === "real" ? "" : " · demo data"}</span><span class="pill">🚚 ${vs.length} trucks · ${mv} moving</span>` +
+  $("hstrip").innerHTML = (F.kind === "real" ? "" : `<a class="cleanbtn" href="?k=${encodeURIComponent(KEY)}&clean=1">Test with your own data — empty office</a>`) +
+    `<span class="pill ${F.kind === "real" ? "ok" : "warn"}">${esc(F.name)}${F.kind === "real" ? "" : " · demo data"}</span><span class="pill">🚚 ${vs.length} trucks · ${mv} moving</span>` +
     `<span class="pill ${is ? "bad" : "ok"}">${is ? "⚠️ " + is + " need attention" : "✓ all clear"}</span><span class="pill">👁️ ${SN?.score_pct ?? "-"}% checks clear</span><span class="pill">📦 ${WS?.orders?.length ?? 0} open orders</span>`; }
 
 // ---------- demo trip director ----------
@@ -663,7 +688,13 @@ async function demoRefresh(){ if (F?.code !== "MEWAR") return; let d; try { d = 
 
 // ---------- start ----------
 $("voiceTog").textContent = VOICE ? "🔊 Voice on" : "🔇 Voice off";
-(async () => { await refresh(); route(); conv(); renderPlan(); activity(); ceoHello(true); demoRefresh(); })();
+(async () => {
+  if (P.get("clean")) {        // ?clean=1 -> a brand-new empty office, no demo data at all
+    try { const r = await post("/api/ws/fleet", {name: "My Transport (test " + new Date().toLocaleTimeString("en-IN", {hour:"2-digit", minute:"2-digit"}) + ")", owner: "मालिक"});
+      wanted = r.code; try { localStorage.setItem("saarthi_fleet", r.code); } catch(_) {}
+      history.replaceState(null, "", `?k=${encodeURIComponent(KEY)}&fleet=${r.code}#home`);
+      setTimeout(() => toast("नया खाली ऑफिस तैयार — कोई demo data नहीं। बोलकर गाड़ी जोड़िए: “RJ27 GA 1234 जोड़ो, ड्राइवर सुनील, उदयपुर”", 7000), 600); } catch(_) {} }
+  await refresh(); route(); conv(); renderPlan(); activity(); ceoHello(true); demoRefresh(); })();
 setInterval(refresh, 15000); setInterval(conv, 2500); setInterval(renderPlan, 45000); setInterval(activity, 20000);
 setInterval(() => ceoHello(false), 20000); setInterval(() => { if (location.hash === "#demo") demoRefresh(); }, 2000);
 </script></body></html>
