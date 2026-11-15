@@ -229,6 +229,21 @@ async def owner_fast(fleet: dict, text: str) -> str | None:
             return out
     if _MONTH.search(text) and _MONEY.search(text) and not _cities_in(text) and not _VEH.search(text):
         return owner_month(fleet, _hindi(text))
+    # "<driver/truck> को बोलो — <message>"  -> straight to the driver's phone (spoken in the cab)
+    from . import workspace
+    m = re.match(r"^\s*(\S+)\s+(?:को|ko)\s+(?:बोलो|bolo|बोल\s*दो|bol\s*do|बता\s*दो|bata\s*do|कहो|kaho|कह\s*दो)\s*[—–:,\-]*\s*(.+)$", text, re.I | re.S)
+    if m:
+        v = workspace._vehicle_in(fleet, m.group(1))
+        if v:
+            from .bus import bus, to_driver
+            msg = m.group(2).strip()
+            await bus.send(to_driver(v, f"🏢 Office: {msg}", speak=f"Boss, office se sandesh: {msg}"))
+            db.log_agent(f"ceo:{fleet['code']}", f"driver:{v['code']}", "instruction", {"message": msg})
+            return f"✅ {v['driver_name'] or v['code']} को बोल दिया — उनके फ़ोन पर अभी सुनाई देगा: “{msg}”। और कुछ?"
+    # "...ट्रिप लगाओ, <driver> की गाड़ी" -> a real assignment, not just a quote: let the CEO agent run assign_trip
+    if re.search(r"(लगाओ|लगा\s*दो|भेजो|भेज\s*दो|assign|chalao|चलाओ|चला\s*के|chala\s*ke|lagao|bhejo)", text, re.I):
+        if any(workspace._vehicle_in(fleet, w) for w in re.findall(r"[A-Za-z0-9ऀ-ॿ]{3,}", text)):
+            return None
     q = parse_route(text)
     if not q:
         if _PAPERS.search(text) and not _cities_in(text) and not re.search(r"(salah|सलाह|tip|advice|tareeke|तरीके)", text, re.I):
