@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import re
 import time
 
 import aiohttp
@@ -159,8 +160,25 @@ class OwnerHeard(_base()):
     async def process_frame(self, frame, direction):
         from pipecat.frames.frames import TranscriptionFrame
         await super().process_frame(frame, direction)
-        if isinstance(frame, TranscriptionFrame) and (frame.text or "").strip():
-            db.log_agent(f"owner:{self.code}", f"ceo:{self.code}", "owner_said", {"text": frame.text.strip(), "voice": True})
+        if isinstance(frame, TranscriptionFrame):
+            text = (frame.text or "").strip()
+            # background chatter / half words: a real request has at least 2 words
+            if len(text) < 4 or len(text.split()) < 2:
+                return
+            db.log_agent(f"owner:{self.code}", f"ceo:{self.code}", "owner_said", {"text": text, "voice": True})
+            try:   # orders, trips-to-driver messages, routes, papers, month: answered by code in < 1 s
+                from .fastlane import owner_fast
+                from .workspace import fleet_by_code
+                fast = await asyncio.wait_for(owner_fast(fleet_by_code(self.code), text), 8)
+            except Exception as e:
+                log.warning("owner voice fast lane skipped: %s", e)
+                fast = None
+            if fast:
+                from pipecat.frames.frames import TTSSpeakFrame
+                db.log_agent(f"ceo:{self.code}", f"owner:{self.code}", "message", {"text": fast, "voice": True})
+                spoken = re.sub(r"[\U0001F000-\U0001FAFF☀-➿✅️]", "", fast).replace("₹", "")
+                await self.push_frame(TTSSpeakFrame(spoken[:500]))
+                return
         await self.push_frame(frame, direction)
 
 

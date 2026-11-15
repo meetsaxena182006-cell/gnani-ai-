@@ -624,7 +624,7 @@ async function ceoCall(){ const st = $("vst"), btn = $("talk");
   vpc.ontrack = e => { const st2 = e.streams[0] || new MediaStream([e.track]); $("ceoOut").srcObject = st2; if (e.track.kind === "audio") watchLevel(st2, "ceo"); };
   const mic = await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:true, noiseSuppression:true, autoGainControl:true, channelCount:1}});
   watchLevel(mic, "me"); orbState("think"); $("hstate").textContent = "जुड़ रहा है…";
-  vpc.addTransceiver(mic.getAudioTracks()[0], {direction:"sendrecv"}); vpc.addTransceiver("video", {direction:"recvonly"});
+  vpc.addTransceiver(gatedMic(mic).getAudioTracks()[0], {direction:"sendrecv"}); vpc.addTransceiver("video", {direction:"recvonly"});
   vpc.onconnectionstatechange = () => { const cs = vpc ? vpc.connectionState : "closed"; st.textContent = cs === "connected" ? "🟢 CEO is listening" : cs;
     if (cs === "connected") { orbState("listen"); $("hmic").classList.add("on"); $("hmic").innerHTML = '<svg width="28" height="28" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>'; $("hmic").title = "End voice call"; }
     if (["failed","closed","disconnected"].includes(cs)) callEnded(cs === "failed" ? "आवाज़ का कनेक्शन नहीं बना — लिखकर पूछिए, मैं बोलकर जवाब दूँगा।" : ""); };
@@ -634,6 +634,22 @@ async function ceoCall(){ const st = $("vst"), btn = $("talk");
 $("talk").onclick = () => ceoCall().catch(e => { $("vst").textContent = "❌ " + e.message; vpc = null; $("talk").textContent = "🎙️ Talk to CEO";
   callEnded("माइक की अनुमति नहीं मिली या आवाज़ नहीं जुड़ी — नीचे लिखकर पूछिए, मैं बोलकर जवाब दूँगा।"); });
 
+
+// voice focus: only the owner's own voice (close to the mic, above the room's background level) reaches Saarthi;
+// TV / other people further away stay under the gate, and the mic is muted while Saarthi itself is speaking
+function gatedMic(mic){ try { AC ||= new (window.AudioContext || window.webkitAudioContext)(); if (AC.state === "suspended") AC.resume();
+  const src = AC.createMediaStreamSource(mic), an = AC.createAnalyser(), hp = AC.createBiquadFilter(), g = AC.createGain(), dst = AC.createMediaStreamDestination();
+  hp.type = "highpass"; hp.frequency.value = 120; an.fftSize = 1024; src.connect(hp); hp.connect(an); hp.connect(g); g.connect(dst); g.gain.value = 0;
+  const buf = new Uint8Array(an.fftSize); let floor = 0.012, openTill = 0;
+  const step = () => { if (!vpc) return; an.getByteTimeDomainData(buf); let sum = 0; for (const x of buf) { const d = (x - 128) / 128; sum += d * d; }
+    const r = Math.sqrt(sum / buf.length), now = performance.now();
+    if (r < floor * 1.6 || r < 0.02) floor = floor * 0.995 + r * 0.005;          // learn the room's background level
+    const thr = Math.max(0.035, floor * 3.2), ceo = lvl.ceo > 0.06;
+    if (r > thr && !ceo) openTill = now + 650;                                   // near voice opens; hold through short pauses
+    if (ceo) openTill = 0;
+    g.gain.setTargetAtTime(now < openTill ? 1 : 0, AC.currentTime, now < openTill ? 0.01 : 0.08); };
+  const timer = setInterval(() => { if (!vpc) { clearInterval(timer); return; } step(); }, 20);
+  return dst.stream; } catch(_) { return mic; } }
 // ---------- Jarvis home: the partner talks first, you just speak ----------
 let AC = null, lvl = {me: 0, ceo: 0};
 function orbState(st){ const w = $("orbw"); w.className = "orbwrap st-" + st;
