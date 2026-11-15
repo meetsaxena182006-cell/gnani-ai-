@@ -179,7 +179,7 @@ async def _capture() -> list[dict]:
                         raise RuntimeError("agent did not answer")
                     kind = "saarthi" if who == "driver" else "ceo"
                     events.append(_stamp({"kind": kind, "text": reply, "speak": reply, "live": True, "step": i}))
-                    if who == "owner":       # anything the CEO sent to the driver's phone is spoken in the cab
+                    if who == "owner" and "बोलो" in q:       # anything the CEO sent to the driver's phone is spoken in the cab
                         for row in db.q("SELECT * FROM agent_log WHERE id>? AND to_agent LIKE 'driver:%' AND kind='message' ORDER BY id",
                                         (last_log,)):
                             try:
