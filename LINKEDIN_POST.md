@@ -2,7 +2,7 @@
 
 So I built **Saarthi (सारथी)** for the Great Indian AI Internship Challenge by @Gnani.ai — two voice AI agents that run a small fleet while the owner and driver just talk:
 
-🧠 **CEO Agent (owner's office)** — opens like Jarvis and speaks first in Hindi: "आज का क्या प्लान है? कोई नई ट्रिप लगानी है?" The owner just says "उदयपुर से हरिद्वार, रमेश की गाड़ी भेजो" and it plans everything end to end: road route, breaks, diesel, tolls, weather, ETA and profit, then hands it to the driver's agent. Orders, trucks and driver messages work the same way.
+🧠 **CEO Agent (owner's office)** — a voice-first, Jarvis-style partner: no forms, just a glowing orb that speaks first in Hindi: "आज का क्या प्लान है? कोई नई ट्रिप लगानी है?" The owner just says "उदयपुर से हरिद्वार, रमेश की गाड़ी भेजो" and it plans everything end to end: road route, breaks, diesel, tolls, weather, ETA and profit, then hands it to the driver's agent. Orders, trucks and driver messages work the same way.
 🎙️ **Driver Agent (on the driver's phone)** — a hands-free co-driver in Hindi + 9 Indian languages: today's plan, mileage and diesel-saving tips, breakdown help from nearby trucks, a return load when the truck is empty, expenses logged by voice.
 ⚡ The two agents update each other in under a second. Driver says "tyre burst" → owner's office gets the alert with location and nearest help in 0.7 s.
 
