@@ -648,11 +648,12 @@ function watchLevel(stream, who){ try { AC ||= new (window.AudioContext || windo
     requestAnimationFrame(tick); })(); } catch(_) {} }
 function callEnded(msg){ $("hmic").classList.remove("on"); $("hmic").innerHTML = '<svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg>'; orbState("idle"); $("orb").style.setProperty("--lvl", 0); if (msg) hSub(msg); }
 let typing = null;
-function hSub(text, you){ const el = $("hsub"); clearInterval(typing); const t = String(text || "").replace(/[*#_`|]/g, "").slice(0, 420); let i = 0; el.dataset.full = t;
+const plain = x => String(x || "").replace(/\*\*|__|`/g, "").replace(/^\s*>\s?/gm, "").replace(/^\s*[-*]\s+/gm, "• ").replace(/[#|]/g, " ").replace(/\s*\n\s*/g, " ").replace(/\s{2,}/g, " ").trim();
+function hSub(text, you){ const el = $("hsub"); clearInterval(typing); const t = plain(text).slice(0, 420); let i = 0; el.dataset.full = t;
   el.innerHTML = ""; const span = document.createElement("span"); if (you) span.className = "you"; el.appendChild(span);
   typing = setInterval(() => { i += 4; span.textContent = t.slice(0, i); if (i >= t.length) clearInterval(typing); }, 22); }
 let hSeen = new Set(); function hLine(who, text){ const box = $("hlog"); if (!text || hSeen.has(who + text)) return; hSeen.add(who + text);
-  box.insertAdjacentHTML("afterbegin", `<div class="l ${who}"><b>${who === "o" ? "आप" : "सारथी"}:</b> ${esc(String(text).slice(0, 300))}</div>`);
+  box.insertAdjacentHTML("afterbegin", `<div class="l ${who}"><b>${who === "o" ? "आप" : "सारथी"}:</b> ${esc(plain(text).slice(0, 360))}</div>`);
   while (box.children.length > 8) box.lastChild.remove(); }
 let greeted = "";
 function homeGreet(text){ greeted = text; hSub(text); hLine("c", text); orbState("idle");
