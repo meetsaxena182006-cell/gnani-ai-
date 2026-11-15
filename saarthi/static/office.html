@@ -77,6 +77,34 @@ form.row{display:flex;gap:8px}form.row input{flex:1}
 .toast{position:fixed;right:18px;top:84px;z-index:2000;padding:12px 16px;max-width:380px;display:none}
 .kv{display:grid;grid-template-columns:130px 1fr;gap:6px 12px;font-size:13px}.kv div:nth-child(odd){color:var(--muted)}
 .mtoggle{display:none}
+/* ---- Jarvis home: voice first ---- */
+#v-home.on{display:flex}
+#v-home{flex-direction:column;align-items:center;min-height:calc(100vh - 110px);position:relative;cursor:pointer;user-select:none}
+.hstrip{display:flex;gap:10px;flex-wrap:wrap;justify-content:center;margin:2px 0 6px}.hstrip .pill{font-size:12px;padding:4px 11px}
+.orbwrap{position:relative;width:min(300px,62vw);aspect-ratio:1;margin:18px auto 8px;display:grid;place-items:center}
+.orb{position:absolute;inset:18%;border-radius:50%;background:radial-gradient(circle at 35% 30%,#ffe2b0 0,#f2a541 28%,#e0643a 55%,#4a1d1d 100%);
+  box-shadow:0 0 60px rgba(242,165,65,.55),0 0 140px rgba(224,100,58,.35),inset 0 0 40px rgba(255,255,255,.25);transform:scale(calc(1 + var(--lvl,0)*.18));transition:transform .08s linear}
+.ring{position:absolute;inset:0;border-radius:50%;border:1.5px solid rgba(242,165,65,.35);animation:spin 14s linear infinite}
+.ring.r2{inset:8%;border-style:dashed;border-color:rgba(51,199,165,.35);animation-duration:22s;animation-direction:reverse}
+.ring.r3{inset:-8%;border-color:rgba(90,169,255,.18);animation-duration:30s}
+.pulse{position:absolute;inset:18%;border-radius:50%;border:2px solid rgba(242,165,65,.6);animation:pulse 2.4s ease-out infinite}
+.st-listen .orb{background:radial-gradient(circle at 35% 30%,#c8fff0 0,#33c7a5 30%,#137a66 60%,#0b2a24 100%);box-shadow:0 0 60px rgba(51,199,165,.6),0 0 140px rgba(51,199,165,.3)}
+.st-listen .pulse{border-color:rgba(51,199,165,.7)}
+.st-think .orb{animation:breathe 1.1s ease-in-out infinite}
+.st-off .orb{filter:saturate(.55) brightness(.8)}
+@keyframes spin{to{transform:rotate(360deg)}}@keyframes pulse{0%{transform:scale(1);opacity:.9}100%{transform:scale(1.7);opacity:0}}
+@keyframes breathe{50%{transform:scale(1.06);filter:brightness(1.2)}}
+.hstate{font-size:13px;letter-spacing:2px;text-transform:uppercase;color:var(--muted);margin-top:4px}
+.hsub{font-size:clamp(18px,2.3vw,26px);line-height:1.45;text-align:center;max-width:900px;margin:14px auto 6px;min-height:2.9em;font-weight:500}
+.hsub .you{color:var(--teal)}
+.hhint{color:var(--accent);font-size:14px;margin:4px 0 10px;animation:breathe 2.2s ease-in-out infinite}
+.hmic{width:76px;height:76px;border-radius:50%;border:0;font-size:30px;cursor:pointer;background:linear-gradient(135deg,var(--accent),#e0643a);color:#1b1206;box-shadow:0 10px 30px rgba(224,100,58,.45)}
+.hmic.on{background:linear-gradient(135deg,#ff5d6c,#c22f3d);color:#fff}
+.hlog{width:min(860px,100%);margin-top:14px;display:flex;flex-direction:column;gap:6px;max-height:30vh;overflow:auto;cursor:default}
+.hlog .l{font-size:13.5px;padding:7px 12px;border-radius:10px;background:rgba(0,0,0,.22);border:1px solid var(--stroke)}
+.hlog .l b{font-weight:600}.hlog .l.o b{color:var(--teal)}.hlog .l.c b{color:var(--accent)}
+.hbar{display:flex;gap:8px;width:min(860px,100%);margin-top:10px;cursor:default}.hbar input{flex:1}
+.hchips{display:flex;gap:6px;flex-wrap:wrap;justify-content:center;margin-top:10px;cursor:default}
 .modal{display:none;position:fixed;inset:0;z-index:3000;place-items:center;background:rgba(0,0,0,.55);backdrop-filter:blur(4px)}
 @media (max-width:1000px){.g2,.g3,.g-even{grid-template-columns:1fr}}
 @media (max-width:820px){.app{grid-template-columns:1fr}aside{position:fixed;z-index:1500;left:0;width:250px;transform:translateX(-100%);transition:transform .2s}aside.open{transform:none}
@@ -86,6 +114,7 @@ form.row{display:flex;gap:8px}form.row input{flex:1}
 <aside id="side">
   <div class="brand"><div class="logo">🚚</div><div><b>सारथी Saarthi</b><small class="muted">CEO Agent · Owner's office</small></div></div>
   <div class="navsep">Operate</div>
+  <a class="nav" data-v="home"><span class="ic">◉</span>Saarthi · voice</a>
   <a class="nav" data-v="overview"><span class="ic">◎</span>Overview</a>
   <a class="nav" data-v="map"><span class="ic">🗺️</span>Live map</a>
   <a class="nav" data-v="trucks"><span class="ic">🚚</span>Trucks & drivers<span class="badge" id="bIssues" style="display:none"></span></a>
@@ -116,6 +145,19 @@ form.row{display:flex;gap:8px}form.row input{flex:1}
     <audio id="ceoOut" autoplay playsinline></audio>
   </div>
   <div id="banner"></div>
+
+  <!-- HOME: voice-first partner -->
+  <section class="view" id="v-home">
+    <div class="hstrip" id="hstrip"></div>
+    <div class="orbwrap st-off" id="orbw"><div class="ring r3"></div><div class="ring"></div><div class="ring r2"></div><div class="pulse"></div><div class="orb" id="orb"></div></div>
+    <div class="hstate" id="hstate">सारथी तैयार है</div>
+    <div class="hsub" id="hsub">…</div>
+    <div class="hhint" id="hhint">👆 कहीं भी टैप करें — सारथी बोलेगा और आपकी बात सुनेगा</div>
+    <button class="hmic" id="hmic" title="Talk / stop">🎙️</button>
+    <div class="hchips" id="hchips"></div>
+    <div class="hbar"><input id="hq" placeholder="या लिखिए… e.g. उदयपुर से हरिद्वार, महेश की गाड़ी भेजो" autocomplete="off"><button class="btn pri" id="hsend">Send</button></div>
+    <div class="hlog" id="hlog"></div>
+  </section>
 
   <!-- OVERVIEW -->
   <section class="view" id="v-overview">
@@ -273,17 +315,18 @@ const fleetCode = () => $("fleet").value;
 let wanted = P.get("fleet"); try { wanted ||= localStorage.getItem("saarthi_fleet"); } catch(_) {}
 
 // ---------- routing (browser back works) ----------
-const TITLES = {overview:"Overview", map:"Live map", trucks:"Trucks & drivers", truck:"Truck", conv:"Conversations", ask:"Ask the CEO Agent",
+const TITLES = {home:"CEO सारथी — your partner", overview:"Overview", map:"Live map", trucks:"Trucks & drivers", truck:"Truck", conv:"Conversations", ask:"Ask the CEO Agent",
   orders:"Orders & today's plan", plan:"Load plan & empty trucks", money:"Money", setup:"Setup & data import", demo:"Demo trip", activity:"Agent activity"};
 function go(v){ location.hash = v; }
-function goBack(){ if (history.length > 1 && location.hash && location.hash !== "#overview") history.back(); else go("overview"); }
+function goBack(){ if (history.length > 1 && location.hash && location.hash !== "#home") history.back(); else go("home"); }
 function route(){
-  const [v, arg] = (location.hash.slice(1) || "overview").split("/");
-  const view = TITLES[v] ? v : "overview";
+  const [v, arg] = (location.hash.slice(1) || "home").split("/");
+  const view = TITLES[v] ? v : "home";
   document.querySelectorAll(".view").forEach(s => s.classList.toggle("on", s.id === "v-" + view));
   document.querySelectorAll(".nav").forEach(n => n.classList.toggle("on", n.dataset.v === (view === "truck" ? "trucks" : view)));
   $("title").textContent = view === "truck" ? "Truck " + (arg||"") : TITLES[view];
-  $("back").style.visibility = view === "overview" ? "hidden" : "visible";
+  $("back").style.visibility = view === "home" ? "hidden" : "visible";
+  $("banner").style.display = view === "home" ? "none" : "";
   side.classList.remove("open");
   if (view === "map") setTimeout(() => { bigMap.invalidateSize(); fitBig(); }, 60);
   if (view === "overview") setTimeout(() => miniMap.invalidateSize(), 60);
@@ -391,7 +434,7 @@ function renderAll(){
       <td><span class="pill ${t.status==="active"?"blue":t.status==="delivered"?"ok":""}">${esc(t.status)}</span></td><td>${t.started? new Date(t.started).toLocaleString([], {day:"numeric", month:"short", hour:"2-digit", minute:"2-digit"}) : "-"}</td></tr>`).join("") + `</table>`
     : `<div class="empty"><b>No trips yet</b>Give a truck today's trip above.</div>`;
   $("emptyBtns").innerHTML = vs.map(v => `<button class="btn sm" onclick="emptyAsk('${esc(v.code)}')">${esc(v.reg)}</button>`).join("") || `<span class="muted">add trucks first</span>`;
-  renderMoney();
+  renderMoney(); homeStrip();
   if (location.hash.startsWith("#truck/")) renderTruck(location.hash.split("/")[1], true);
 }
 function renderMoney(){
@@ -459,7 +502,7 @@ $("quick").innerHTML = ["sab theek hai? kuch miss to nahi?", "aaj sab gaadiyan k
   "Udaipur se Ahmedabad 16 ton, client 22000 de raha hai — profit?", "kaunsi gaadi ghaate mein hai?"].map(q => `<button class="btn sm" onclick="ask(this.textContent)">${esc(q)}</button>`).join("");
 async function ceoHello(open){ try { if (!F) return setTimeout(() => ceoHello(open), 1500);
   const r = await api(`/api/ceo/hello?fleet=${encodeURIComponent(F.code)}${open ? "&open=1" : ""}`);
-  if (r && r.text) { $("brief").textContent = r.text; bub("ai", r.text); if (open) { $("jText").textContent = r.text; $("jarvis").style.display = "block"; } } } catch(_) {} }
+  if (r && r.text) { $("brief").textContent = r.text; bub("ai", r.text); if (open) homeGreet(r.text); } } catch(_) {} }
 
 // ---------- conversations ----------
 let csince = 0, cfleet = "";
@@ -475,7 +518,9 @@ async function conv(){ if (!F) return;
     const html = d.rows.map(convRow).join(""); $("conv").insertAdjacentHTML("beforeend", html); $("convMini").insertAdjacentHTML("beforeend", html);
     while ($("convMini").children.length > 12) $("convMini").firstChild.remove();
     if (csince) d.rows.filter(r => r.to_agent.startsWith("owner") && !(r.payload||{}).voice).forEach(r => say(r.payload.text));
-    if (csince && d.rows.some(r => r.to_agent.startsWith("owner"))) toast("📲 " + esc((d.rows.filter(r => r.to_agent.startsWith("owner")).pop().payload.text||"").slice(0,140)));
+    if (csince) d.rows.forEach(r => { if (r.kind === "owner_said") hLine("o", r.payload.text);
+      else if (r.to_agent.startsWith("owner")) { hLine("c", r.payload.text); if ((r.payload||{}).voice) hSub(r.payload.text); } });
+    if (csince && !location.hash.match(/^(#home)?$/) && d.rows.some(r => r.to_agent.startsWith("owner"))) toast("📲 " + esc((d.rows.filter(r => r.to_agent.startsWith("owner")).pop().payload.text||"").slice(0,140)));
     csince = d.rows[d.rows.length - 1].id; $("conv").scrollTop = $("convMini").scrollTop = 1e9; } catch(_) {} }
 async function activity(){ if (!F) return; try { const codes = [F.code, ...F.vehicles.map(v => v.code)];
   const log = (await api("/api/agent-log?limit=120")).filter(r => codes.some(c => (r.from_agent + r.to_agent).includes(c))).slice(0, 60);
@@ -542,24 +587,69 @@ document.addEventListener("pointerdown", () => { unlocked = true; }, {once:true}
 function say(text, force){ if (!text || (!VOICE && !force) || vpc || (!unlocked && !force)) return;
   const t = String(text).slice(0, 450);
   playing = playing.then(async () => { try { const b = await fetch("/api/tts?text=" + encodeURIComponent(t), {headers:{"X-Saarthi-Key": KEY}}); if (!b.ok) return;
-    const a = new Audio(URL.createObjectURL(await b.blob())); await a.play(); await new Promise(r => { a.onended = r; a.onerror = r; }); } catch(_) {} }); }
-function jarvisTalk(){ $("jarvis").style.display = "none"; if (!vpc) $("talk").click(); }
+    const a = new Audio(URL.createObjectURL(await b.blob())); curAudio = a; await a.play(); spoke = true; orbState("speak");
+    await new Promise(r => { a.onended = r; a.onerror = r; }); orbState(vpc ? "listen" : "idle"); } catch(_) { orbState(vpc ? "listen" : "idle"); } }); }
+let curAudio = null, spoke = false;
+function jarvisTalk(){ startTalk(); }
 
 // ---------- voice call with the CEO (Gnani listens + speaks) ----------
 let vpc = null;
 async function ceoCall(){ const st = $("vst"), btn = $("talk");
-  if (vpc) { try { vpc.close(); } catch(_) {} vpc = null; btn.textContent = "🎙️ Talk to CEO"; st.textContent = ""; return; }
+  if (vpc) { try { vpc.close(); } catch(_) {} vpc = null; btn.textContent = "🎙️ Talk to CEO"; st.textContent = ""; callEnded(""); return; }
+  if (curAudio) { try { curAudio.pause(); } catch(_) {} }
   btn.textContent = "⏹ End call"; st.textContent = "connecting…";
   let ice = [{urls:"stun:stun.l.google.com:19302"}]; try { ice = await api(`/api/owner/ice?fleet=${encodeURIComponent(F.code)}`); } catch(_) {}
   vpc = new RTCPeerConnection({iceServers: ice}); vpc.createDataChannel("ceo", {ordered:true});
-  vpc.ontrack = e => { $("ceoOut").srcObject = e.streams[0] || new MediaStream([e.track]); };
+  vpc.ontrack = e => { const st2 = e.streams[0] || new MediaStream([e.track]); $("ceoOut").srcObject = st2; if (e.track.kind === "audio") watchLevel(st2, "ceo"); };
   const mic = await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:true, noiseSuppression:true, autoGainControl:true, channelCount:1}});
+  watchLevel(mic, "me"); orbState("think"); $("hstate").textContent = "जुड़ रहा है…";
   vpc.addTransceiver(mic.getAudioTracks()[0], {direction:"sendrecv"}); vpc.addTransceiver("video", {direction:"recvonly"});
-  vpc.onconnectionstatechange = () => { st.textContent = vpc && vpc.connectionState === "connected" ? "🟢 CEO is listening" : (vpc ? vpc.connectionState : ""); };
+  vpc.onconnectionstatechange = () => { const cs = vpc ? vpc.connectionState : "closed"; st.textContent = cs === "connected" ? "🟢 CEO is listening" : cs;
+    if (cs === "connected") { orbState("listen"); $("hmic").classList.add("on"); $("hmic").textContent = "⏹"; }
+    if (["failed","closed","disconnected"].includes(cs)) callEnded(cs === "failed" ? "आवाज़ का कनेक्शन नहीं बना — लिखकर पूछिए, मैं बोलकर जवाब दूँगा।" : ""); };
   await vpc.setLocalDescription(await vpc.createOffer());
   await new Promise(r => { if (vpc.iceGatheringState === "complete") r(); else { vpc.onicegatheringstatechange = () => vpc.iceGatheringState === "complete" && r(); setTimeout(r, 2500); } });
   const ans = await post(`/api/owner/offer?fleet=${encodeURIComponent(F.code)}`, {sdp: vpc.localDescription.sdp, type: vpc.localDescription.type}); await vpc.setRemoteDescription(ans); }
-$("talk").onclick = () => ceoCall().catch(e => { $("vst").textContent = "❌ " + e.message; vpc = null; $("talk").textContent = "🎙️ Talk to CEO"; });
+$("talk").onclick = () => ceoCall().catch(e => { $("vst").textContent = "❌ " + e.message; vpc = null; $("talk").textContent = "🎙️ Talk to CEO";
+  callEnded("माइक की अनुमति नहीं मिली या आवाज़ नहीं जुड़ी — नीचे लिखकर पूछिए, मैं बोलकर जवाब दूँगा।"); });
+
+// ---------- Jarvis home: the partner talks first, you just speak ----------
+let AC = null, lvl = {me: 0, ceo: 0};
+function orbState(st){ const w = $("orbw"); w.className = "orbwrap st-" + st;
+  $("hstate").textContent = {idle:"सारथी तैयार है", listen:"🎙️ बोलिए — मैं सुन रहा हूँ", speak:"🔊 सारथी बोल रहा है", think:"सोच रहा हूँ…", off:"सारथी तैयार है"}[st] || ""; }
+function watchLevel(stream, who){ try { AC ||= new (window.AudioContext || window.webkitAudioContext)(); const an = AC.createAnalyser(); an.fftSize = 512;
+  AC.createMediaStreamSource(stream).connect(an); const buf = new Uint8Array(an.fftSize);
+  (function tick(){ if (!vpc && who !== "tts") { lvl[who] = 0; $("orb").style.setProperty("--lvl", 0); return; }
+    an.getByteTimeDomainData(buf); let sum = 0; for (const x of buf) { const d = (x - 128) / 128; sum += d * d; }
+    lvl[who] = Math.min(1, Math.sqrt(sum / buf.length) * 6); const L2 = Math.max(lvl.me, lvl.ceo);
+    $("orb").style.setProperty("--lvl", L2.toFixed(3));
+    if (vpc && vpc.connectionState === "connected") orbState(lvl.ceo > 0.12 ? "speak" : "listen");
+    requestAnimationFrame(tick); })(); } catch(_) {} }
+function callEnded(msg){ $("hmic").classList.remove("on"); $("hmic").textContent = "🎙️"; orbState("idle"); $("orb").style.setProperty("--lvl", 0); if (msg) hSub(msg); }
+let typing = null;
+function hSub(text, you){ const el = $("hsub"); clearInterval(typing); const t = String(text || "").replace(/[*#_`]/g, "").slice(0, 420); let i = 0;
+  el.innerHTML = ""; const span = document.createElement("span"); if (you) span.className = "you"; el.appendChild(span);
+  typing = setInterval(() => { i += 2; span.textContent = t.slice(0, i); if (i >= t.length) clearInterval(typing); }, 22); }
+let hSeen = new Set(); function hLine(who, text){ const box = $("hlog"); if (!text || hSeen.has(who + text)) return; hSeen.add(who + text);
+  box.insertAdjacentHTML("afterbegin", `<div class="l ${who}"><b>${who === "o" ? "आप" : "सारथी"}:</b> ${esc(String(text).slice(0, 300))}</div>`);
+  while (box.children.length > 8) box.lastChild.remove(); }
+let greeted = "";
+function homeGreet(text){ greeted = text; hSub(text); hLine("c", text); orbState("idle");
+  say(text, true); setTimeout(() => { $("hhint").style.display = (spoke || vpc) ? "none" : ""; }, 2500); }
+async function hAsk(text){ if (!text) return; hLine("o", text); hSub(text, true); orbState("think");
+  try { const r = await post("/api/ceo/chat", {fleet: F.code, text}); const rep = r.reply || r.error || ""; hLine("c", rep); hSub(rep); bub("me", text); bub("ai", rep);
+    orbState("idle"); say(rep, true); refresh(); } catch(e) { hSub("⚠ " + e.message); orbState("idle"); } }
+function startTalk(){ $("hhint").style.display = "none"; unlocked = true; if (!vpc) $("talk").click(); }
+$("v-home").addEventListener("click", e => { if (e.target.closest("input,button,.hbar,.hchips,.hlog,a,select")) return; if (!vpc) startTalk(); });
+$("hmic").onclick = e => { e.stopPropagation(); $("hhint").style.display = "none"; $("talk").click(); };
+$("hsend").onclick = () => { const t = $("hq").value.trim(); $("hq").value = ""; hAsk(t); };
+$("hq").addEventListener("keydown", e => { if (e.key === "Enter") $("hsend").click(); });
+$("hchips").innerHTML = ["आज का प्लान बताओ", "नई ट्रिप: उदयपुर से हरिद्वार", "सब ठीक है? कुछ miss तो नहीं?", "इस महीने का हिसाब", "खाली गाड़ी के लिए लोड ढूँढो", "कौनसे कागज़ खत्म हो रहे हैं?"]
+  .map(q => `<button class="btn sm">${esc(q)}</button>`).join("");
+$("hchips").querySelectorAll("button").forEach(b => b.onclick = e => { e.stopPropagation(); hAsk(b.textContent.startsWith("नई ट्रिप") ? "उदयपुर से हरिद्वार नई ट्रिप लगानी है — कौनसी गाड़ी खाली है?" : b.textContent); });
+function homeStrip(){ if (!F) return; const vs = F.vehicles, mv = vs.filter(v => v.speed > 3).length, is = vs.filter(v => v.issue).length;
+  $("hstrip").innerHTML = `<span class="pill ${F.kind === "real" ? "ok" : "warn"}">${esc(F.name)}${F.kind === "real" ? "" : " · demo data"}</span><span class="pill">🚚 ${vs.length} trucks · ${mv} moving</span>` +
+    `<span class="pill ${is ? "bad" : "ok"}">${is ? "⚠️ " + is + " need attention" : "✓ all clear"}</span><span class="pill">👁️ ${SN?.score_pct ?? "-"}% checks clear</span><span class="pill">📦 ${WS?.orders?.length ?? 0} open orders</span>`; }
 
 // ---------- demo trip director ----------
 let demoLine = null;
