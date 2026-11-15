@@ -74,9 +74,10 @@ form.row{display:flex;gap:8px}form.row input{flex:1}
 .steps li:before{content:counter(s);position:absolute;left:0;top:6px;width:20px;height:20px;border-radius:50%;display:grid;place-items:center;font-size:11px;background:var(--glass2);border:1px solid var(--stroke)}
 .steps li.done{color:var(--teal)}.steps li.done:before{content:"✓";background:var(--teal);color:#04150f}
 .bar{height:8px;background:rgba(255,255,255,.08);border-radius:6px;overflow:hidden}.bar>div{height:100%;background:linear-gradient(90deg,var(--teal),var(--accent));transition:width 1s}
-.toast{position:fixed;right:18px;bottom:18px;z-index:2000;padding:12px 16px;max-width:380px;display:none}
+.toast{position:fixed;right:18px;top:84px;z-index:2000;padding:12px 16px;max-width:380px;display:none}
 .kv{display:grid;grid-template-columns:130px 1fr;gap:6px 12px;font-size:13px}.kv div:nth-child(odd){color:var(--muted)}
 .mtoggle{display:none}
+.modal{display:none;position:fixed;inset:0;z-index:3000;place-items:center;background:rgba(0,0,0,.55);backdrop-filter:blur(4px)}
 @media (max-width:1000px){.g2,.g3,.g-even{grid-template-columns:1fr}}
 @media (max-width:820px){.app{grid-template-columns:1fr}aside{position:fixed;z-index:1500;left:0;width:250px;transform:translateX(-100%);transition:transform .2s}aside.open{transform:none}
 .mtoggle{display:inline-block}main{padding:12px}.form{grid-template-columns:1fr}.maplist{display:none}}
@@ -106,7 +107,9 @@ form.row{display:flex;gap:8px}form.row input{flex:1}
     <div class="crumb"><button class="btn sm ghost" id="back" onclick="goBack()" title="Back">←</button><h1 id="title">Overview</h1></div>
     <span class="sp"></span>
     <select id="fleet" title="Fleet"></select>
+    <button class="btn sm teal" onclick="newTrip()">＋ New trip</button>
     <button class="btn sm" onclick="newFleet()">＋ New clean fleet</button>
+    <button class="btn sm" id="voiceTog" onclick="toggleVoice()" title="Read CEO replies aloud (Gnani Timbre)">🔊 Voice on</button>
     <button class="btn sm pri" id="talk">🎙️ Talk to CEO</button><span id="vst" class="muted" style="font-size:12px"></span>
     <a class="btn sm" id="links" target="_blank" style="text-decoration:none">🔗 Driver links</a>
     <span id="st" class="muted" style="font-size:11.5px"></span>
@@ -133,7 +136,7 @@ form.row{display:flex;gap:8px}form.row input{flex:1}
   <!-- MAP -->
   <section class="view" id="v-map">
     <div class="mapwrap"><div id="map"></div>
-      <div class="legend glass"><span><span class="dot ok"></span> Moving</span><span><span class="dot" style="background:var(--blue)"></span> Parked / idle</span><span><span class="dot bad"></span> Needs attention</span><span>┅ planned route</span></div>
+      <div class="legend glass"><span><span class="dot ok"></span> Moving</span><span><span class="dot" style="background:var(--blue)"></span> Parked / idle</span><span><span class="dot bad"></span> Needs attention</span><span>━ road route · ┅ straight line</span><span class="muted">SIM = simulated GPS</span></div>
       <div class="maplist glass" id="maplist"></div></div>
   </section>
 
@@ -218,6 +221,29 @@ form.row{display:flex;gap:8px}form.row input{flex:1}
   <section class="view" id="v-activity"><div class="card glass"><h3>📜 Agent activity <small>every message between the agents</small></h3><div id="log"></div></div></section>
 </main></div>
 <div class="toast glass" id="toast"></div>
+<div id="ntModal" class="modal" onclick="if(event.target===this)this.style.display='none'">
+  <form class="card glass" style="width:min(620px,94vw);background:rgba(16,27,40,.94)" onsubmit="submitTrip(event)">
+    <h3>＋ New trip <small>the CEO Agent plans it end to end and hands it to the driver's agent</small></h3>
+    <div class="form">
+      <label>Fleet<select id="ntFleet" onchange="fillTrucks()"></select></label>
+      <label>Truck · driver<select id="ntVeh"></select></label>
+      <label>From <small>(blank = where the truck is now)</small><input id="ntFrom" placeholder="Udaipur"></label>
+      <label>To<input id="ntTo" placeholder="Haridwar" required></label>
+      <label>Freight ₹ <small>(optional)</small><input id="ntFr" inputmode="numeric" placeholder="65000"></label>
+      <label>Weight ton <small>(optional)</small><input id="ntW" inputmode="decimal" placeholder="18"></label>
+      <label class="full">Party / client <small>(optional)</small><input id="ntCl" placeholder="Ganga Traders"></label>
+      <label class="full" style="flex-direction:row;align-items:center;gap:8px;color:var(--fg)"><input type="checkbox" id="ntSim" style="width:auto"> ▶ Also run a <b>simulated drive</b> (sped-up demo GPS on the real road: tolls, breaks, alerts fire live)</label>
+    </div>
+    <div class="res" id="ntRes"></div>
+    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:10px;flex-wrap:wrap" id="ntBtns">
+      <button type="button" class="btn ghost" onclick="$('ntModal').style.display='none'">Close</button><button class="btn teal" id="ntGo">Plan & send to driver</button></div>
+    <p class="muted" style="font-size:12px;margin:10px 0 0">Or just say it: press 🎙️ Talk to CEO → "उदयपुर से हरिद्वार, रमेश की गाड़ी भेजो".</p>
+  </form></div>
+<div id="jarvis" class="glass" style="display:none;position:fixed;left:50%;bottom:22px;transform:translateX(-50%);z-index:1800;width:min(680px,94vw);padding:16px 18px;background:rgba(14,24,36,.92);border-color:rgba(242,165,65,.4)">
+  <div style="display:flex;gap:12px;align-items:flex-start"><div class="logo" style="width:42px;height:42px;border-radius:50%;display:grid;place-items:center;font-size:20px;background:linear-gradient(135deg,var(--accent),#e0643a);flex:none">🧠</div>
+  <div style="flex:1"><b>CEO सारथी</b> <small class="muted">talks first</small><div id="jText" style="margin-top:4px;font-size:14px">…</div>
+  <div class="quick" style="margin-top:10px"><button class="btn pri" onclick="jarvisTalk()">🎙️ बोलकर जवाब दें (voice)</button><button class="btn" onclick="say($('jText').textContent, true)">🔊 सुनाओ</button>
+  <button class="btn" onclick="$('jarvis').style.display='none'; newTrip()">＋ New trip</button><button class="btn ghost" onclick="$('jarvis').style.display='none'">Later</button></div></div></div></div>
 <div id="nfModal" style="display:none;position:fixed;inset:0;z-index:3000;place-items:center;background:rgba(0,0,0,.55);backdrop-filter:blur(4px)" onclick="if(event.target===this)this.style.display='none'">
   <form class="card glass" style="width:min(440px,92vw);background:rgba(16,27,40,.92)" onsubmit="createFleet(event)">
     <h3>＋ Create a clean fleet <small>empty — your own trucks, orders and drivers</small></h3>
@@ -286,9 +312,11 @@ function drawMap(m, labels){
   m._layers2.clearLayers(); const pts = [];
   (F?.vehicles||[]).forEach(v => {
     if (v.lat == null) return; const c = COL[status(v)]; pts.push([v.lat, v.lon]);
-    if (v.dest) { L.polyline([[v.lat, v.lon], v.dest], {color:c, weight:2.5, dashArray:"6 8", opacity:.85}).addTo(m._layers2);
+    if (v.route && v.route.length > 1) { L.polyline(v.route, {color:"#000", weight:7, opacity:.35}).addTo(m._layers2);
+      L.polyline(v.route, {color:c, weight:4, opacity:.95}).addTo(m._layers2); v.route.forEach(p => pts.push(p)); }
+    if (v.dest) { if (!(v.route && v.route.length > 1)) L.polyline([[v.lat, v.lon], v.dest], {color:c, weight:2.5, dashArray:"6 8", opacity:.85}).addTo(m._layers2);
       L.circleMarker(v.dest, {radius:5, color:c, fillColor:"#0b1520", fillOpacity:1, weight:2}).bindTooltip("🏁 " + esc((v.trip||"").split("→")[1]||"")).addTo(m._layers2); pts.push(v.dest); }
-    const icon = L.divIcon({className:"", html:`<div class="tmark"><div class="c" style="background:${c}">🚚</div>${labels ? `<div class="lab">${esc(v.reg)}${v.speed>3? " · "+v.speed+" km/h":""}</div>` : ""}</div>`, iconSize:[0,0]});
+    const icon = L.divIcon({className:"", html:`<div class="tmark"><div class="c" style="background:${c}">🚚</div>${labels ? `<div class="lab">${esc(v.reg)}${v.speed>3? " · "+v.speed+" km/h":""}${v.simulated? " · SIM":""}</div>` : ""}</div>`, iconSize:[0,0]});
     L.marker([v.lat, v.lon], {icon}).addTo(m._layers2).bindPopup(`<b>${esc(v.reg)}</b> · ${esc(v.driver||"no driver")}<br>${esc(v.trip||"no active trip")}<br>${v.speed} km/h · seen ${tm(v.last_seen)}${v.issue? `<br><span style="color:#ff8b95">⚠️ ${esc(v.issue)}</span>`:""}<br><a href="#truck/${esc(v.code)}">open truck →</a>`);
   });
   if (demoLine && m === bigMap) demoLine.addTo(m._layers2);
@@ -342,7 +370,7 @@ function renderAll(){
       <div class="row"><span class="muted">Trip</span><span>${esc(v.trip||"free")}</span></div>
       <div class="row"><span class="muted">ETA · next stop</span><span>${v.plan? esc(v.plan.arrive) : "—"}</span></div>
       <div class="row"><span class="muted">Speed · seen</span><span>${v.speed} km/h · ${tm(v.last_seen)}</span></div>
-      <div class="chips">${v.issue? `<span class="pill bad">⚠️ ${esc(v.issue).slice(0,60)}</span>` : `<span class="pill ok">✓ no issue</span>`}${v.tolls_unreported? `<span class="pill warn">🧾 ${v.tolls_unreported} toll(s) unreported</span>`:""}${v.companion==="live"? `<span class="pill ok">🎙️ on voice call</span>`:""}</div></div>`; }).join("")
+      <div class="chips">${v.issue? `<span class="pill bad">⚠️ ${esc(v.issue).slice(0,60)}</span>` : `<span class="pill ok">✓ no issue</span>`}${v.tolls_unreported? `<span class="pill warn">🧾 ${v.tolls_unreported} toll(s) unreported</span>`:""}${v.companion==="live"? `<span class="pill ok">🎙️ on voice call</span>`:""}${v.simulated? `<span class="pill warn">SIMULATED drive</span>`:""}</div></div>`; }).join("")
     : `<div class="card glass empty"><b>No trucks in this fleet</b><button class="btn teal" onclick="go('setup')">Add a truck</button></div>`;
   // maps
   const key = F.code + vs.length;
@@ -410,7 +438,7 @@ function renderTruck(code, quiet){
       <form class="row" onsubmit="event.preventDefault(); msgDriver('${esc(v.code)}', this.m.value); this.m.value=''"><input name="m" placeholder="Message to the driver (spoken in the cab)…"><button class="btn teal">Send</button></form>
       <div class="quick"><button class="btn sm" onclick="askQuick('${esc(v.code)} ka abhi kya haal hai?')">Status</button><button class="btn sm" onclick="askQuick('${esc(v.code)} ki trip ka profit batao')">Trip profit</button>
       <button class="btn sm" onclick="askQuick('${esc(v.code)} ka trip plan banao')">Make route plan</button><button class="btn sm" onclick="emptyAsk('${esc(v.code)}')">Find load (empty)</button>
-      <button class="btn sm" onclick="askQuick('${esc(v.code)} ka client tracking link do')">Tracking link</button><button class="btn sm" onclick="go('orders'); $('tripVeh').value='${esc(v.code)}'">Give a trip</button></div>
+      <button class="btn sm" onclick="askQuick('${esc(v.code)} ka client tracking link do')">Tracking link</button><button class="btn sm" onclick="newTrip('${esc(v.code)}')">Give a trip</button>${v.trip? `<button class="btn sm" onclick="simDrive('${esc(v.code)}')">▶ Simulate drive</button>`:""}</div>
       <div class="res" id="tRes"></div></div></div>`;
   if (v.lat != null) { setTimeout(() => {}, 0); }
 }
@@ -423,7 +451,7 @@ async function emptyAsk(code){ const out = $("emptyRes"); out.textContent = "⏳
 const chat = $("chat");
 function bub(cls, t){ chat.insertAdjacentHTML("beforeend", `<div class="bub ${cls}">${esc(t)}</div>`); chat.scrollTop = 1e9; }
 async function ask(text){ bub("me", text); const w = document.createElement("div"); w.className = "bub ai"; w.textContent = "…"; chat.appendChild(w); chat.scrollTop = 1e9;
-  const t0 = Date.now(); try { const r = await post("/api/ceo/chat", {fleet: F.code, text}); w.textContent = (r.reply || r.error || "") ; w.insertAdjacentHTML("beforeend", `<br><small>${((Date.now()-t0)/1000).toFixed(1)} s</small>`); } catch(e) { w.textContent = "⚠ " + e.message; }
+  const t0 = Date.now(); try { const r = await post("/api/ceo/chat", {fleet: F.code, text}); w.textContent = (r.reply || r.error || "") ; w.insertAdjacentHTML("beforeend", `<br><small>${((Date.now()-t0)/1000).toFixed(1)} s</small>`); say(r.reply); } catch(e) { w.textContent = "⚠ " + e.message; }
   chat.scrollTop = 1e9; refresh(); }
 function askQuick(t){ go("ask"); ask(t); }
 $("f").onsubmit = e => { e.preventDefault(); const t = $("q").value.trim(); if (t) { $("q").value = ""; ask(t); } };
@@ -431,7 +459,7 @@ $("quick").innerHTML = ["sab theek hai? kuch miss to nahi?", "aaj sab gaadiyan k
   "Udaipur se Ahmedabad 16 ton, client 22000 de raha hai — profit?", "kaunsi gaadi ghaate mein hai?"].map(q => `<button class="btn sm" onclick="ask(this.textContent)">${esc(q)}</button>`).join("");
 async function ceoHello(open){ try { if (!F) return setTimeout(() => ceoHello(open), 1500);
   const r = await api(`/api/ceo/hello?fleet=${encodeURIComponent(F.code)}${open ? "&open=1" : ""}`);
-  if (r && r.text) { $("brief").textContent = r.text; bub("ai", r.text); } } catch(_) {} }
+  if (r && r.text) { $("brief").textContent = r.text; bub("ai", r.text); if (open) { $("jText").textContent = r.text; $("jarvis").style.display = "block"; } } } catch(_) {} }
 
 // ---------- conversations ----------
 let csince = 0, cfleet = "";
@@ -446,6 +474,7 @@ async function conv(){ if (!F) return;
     if (!csince) $("convMini").innerHTML = "";
     const html = d.rows.map(convRow).join(""); $("conv").insertAdjacentHTML("beforeend", html); $("convMini").insertAdjacentHTML("beforeend", html);
     while ($("convMini").children.length > 12) $("convMini").firstChild.remove();
+    if (csince) d.rows.filter(r => r.to_agent.startsWith("owner") && !(r.payload||{}).voice).forEach(r => say(r.payload.text));
     if (csince && d.rows.some(r => r.to_agent.startsWith("owner"))) toast("📲 " + esc((d.rows.filter(r => r.to_agent.startsWith("owner")).pop().payload.text||"").slice(0,140)));
     csince = d.rows[d.rows.length - 1].id; $("conv").scrollTop = $("convMini").scrollTop = 1e9; } catch(_) {} }
 async function activity(){ if (!F) return; try { const codes = [F.code, ...F.vehicles.map(v => v.code)];
@@ -483,6 +512,39 @@ $("ft").onsubmit = async e => { e.preventDefault(); const f = $("ftf").files[0];
   const j = await fetch("/api/fastag/statement", {method:"POST", headers:{"X-Saarthi-Key": KEY, "Content-Type":"text/csv"}, body: await f.text()}).then(r => r.json());
   $("ftr").textContent = `${j.rows} deductions: ${j.matched} matched to GPS crossings, ${j.suspect} suspicious (no crossing — dispute), ${j.unknown_vehicle} unknown vehicle`; refresh(); };
 
+// ---------- new trip (any fleet) ----------
+let ntSince = 0, ntTimer = null;
+function fillTrucks(pre){ const f = FLEETS.find(x => x.code === $("ntFleet").value) || F;
+  $("ntVeh").innerHTML = f.vehicles.map(v => `<option value="${esc(v.code)}">${esc(v.reg)} · ${esc(v.driver||"no driver")}${v.trip? " (on trip)":""}</option>`).join("") || `<option value="">no trucks — add one in Setup</option>`;
+  if (pre) $("ntVeh").value = pre; }
+function newTrip(pre){ $("ntFleet").innerHTML = FLEETS.map(f => `<option value="${esc(f.code)}">${esc(f.name)}${f.kind==="real"? "":" (demo)"}</option>`).join("");
+  $("ntFleet").value = F.code; fillTrucks(pre); $("ntRes").textContent = ""; $("ntGo").disabled = false; $("ntModal").style.display = "grid"; setTimeout(() => $("ntTo").focus(), 60); }
+async function submitTrip(e){ e.preventDefault(); const fleet = $("ntFleet").value, vehicle = $("ntVeh").value; if (!vehicle) return toast("Add a truck first");
+  $("ntGo").disabled = true; $("ntRes").textContent = "⏳ CEO Agent is setting the trip…";
+  try { const d = await api(`/api/office/feed?fleet=${encodeURIComponent(fleet)}&since=0`); ntSince = d.rows.length ? d.rows[d.rows.length-1].id : 0; } catch(_) {}
+  const r = await post("/api/ws/trip", {fleet, vehicle, origin: $("ntFrom").value, destination: $("ntTo").value, freight: $("ntFr").value,
+    weight: $("ntW").value, client: $("ntCl").value, simulate: $("ntSim").checked});
+  if (r.error) { $("ntRes").textContent = "⚠ " + r.error; $("ntGo").disabled = false; return; }
+  if (fleet !== F.code) { $("fleet").value = fleet; $("fleet").onchange(); }
+  $("ntRes").innerHTML = `✅ <b>${esc(r.reg)}: ${esc(r.route)}</b> — driver told in the cab.<br>⏳ Planning route, breaks, diesel, tolls, weather, ETA and profit…`;
+  clearInterval(ntTimer); let n = 0;
+  ntTimer = setInterval(async () => { n++; try { const d = await api(`/api/office/feed?fleet=${encodeURIComponent(fleet)}&since=${ntSince}`);
+      const plan = d.rows.find(x => x.to_agent.startsWith("owner") && /plan/i.test(x.payload.text||"") && /(→|->)/.test(x.payload.text||""));
+      if (plan) { clearInterval(ntTimer); $("ntRes").innerHTML = `✅ <b>${esc(r.reg)}: ${esc(r.route)}</b> — plan ready and sent to the driver's agent${r.simulated_drive? " · simulated drive starting":""}.<div class="msg own" style="margin-top:8px;max-height:260px;overflow:auto">${esc(plan.payload.text)}</div>`;
+        $("ntBtns").insertAdjacentHTML("afterbegin", `<button type="button" class="btn" onclick="$('ntModal').style.display='none';go('map')">🗺️ Watch on map</button><button type="button" class="btn" onclick="$('ntModal').style.display='none';go('truck/${esc(vehicle)}')">Open truck</button>`); refresh(); }
+      else if (n > 30) { clearInterval(ntTimer); $("ntRes").insertAdjacentHTML("beforeend", "<br>The plan will appear in Conversations."); } } catch(_) {} }, 2500); }
+async function simDrive(code){ const r = await post("/api/ws/simulate", {fleet: F.code, vehicle: code}); toast(r.error ? "⚠ " + esc(r.error) : `▶ Simulated drive started (${r.points} GPS points, ~${r.minutes} min). Watch the map and Conversations.`, 5000); go("map"); }
+
+// ---------- voice out: CEO replies read aloud with Gnani Timbre ----------
+let VOICE = true, unlocked = false, playing = Promise.resolve(); try { VOICE = localStorage.getItem("saarthi_voice") !== "0"; } catch(_) {}
+function toggleVoice(){ VOICE = !VOICE; try { localStorage.setItem("saarthi_voice", VOICE ? "1" : "0"); } catch(_) {} $("voiceTog").textContent = VOICE ? "🔊 Voice on" : "🔇 Voice off"; }
+document.addEventListener("pointerdown", () => { unlocked = true; }, {once:true});
+function say(text, force){ if (!text || (!VOICE && !force) || vpc || (!unlocked && !force)) return;
+  const t = String(text).slice(0, 450);
+  playing = playing.then(async () => { try { const b = await fetch("/api/tts?text=" + encodeURIComponent(t), {headers:{"X-Saarthi-Key": KEY}}); if (!b.ok) return;
+    const a = new Audio(URL.createObjectURL(await b.blob())); await a.play(); await new Promise(r => { a.onended = r; a.onerror = r; }); } catch(_) {} }); }
+function jarvisTalk(){ $("jarvis").style.display = "none"; if (!vpc) $("talk").click(); }
+
 // ---------- voice call with the CEO (Gnani listens + speaks) ----------
 let vpc = null;
 async function ceoCall(){ const st = $("vst"), btn = $("talk");
@@ -510,6 +572,7 @@ async function demoRefresh(){ if (F?.code !== "MEWAR") return; let d; try { d = 
   if (d.route && d.route.length && !demoLine) demoLine = L.polyline(d.route, {color:"#f2a541", weight:4, opacity:.85}); }
 
 // ---------- start ----------
+$("voiceTog").textContent = VOICE ? "🔊 Voice on" : "🔇 Voice off";
 (async () => { await refresh(); route(); conv(); renderPlan(); activity(); ceoHello(true); demoRefresh(); })();
 setInterval(refresh, 15000); setInterval(conv, 2500); setInterval(renderPlan, 45000); setInterval(activity, 20000);
 setInterval(() => ceoHello(false), 20000); setInterval(() => { if (location.hash === "#demo") demoRefresh(); }, 2000);

@@ -119,9 +119,11 @@ def _fleet_tools(fleet_id: int) -> list[Tool]:
         return await workspace.add_order(db.fleet(fleet_id), origin, destination, freight, weight_t, party, ready_on)
 
     async def assign_trip(vehicle_code: str, origin: str = "", destination: str = "", freight: float | None = None,
-                          client: str = "", weight_t: float | None = None, load_id: int | None = None):
+                          client: str = "", weight_t: float | None = None, load_id: int | None = None,
+                          simulate_drive: bool = False):
         from .. import workspace
-        return await workspace.assign_trip(db.fleet(fleet_id), vehicle_code, origin, destination, freight, client, weight_t, load_id)
+        return await workspace.assign_trip(db.fleet(fleet_id), vehicle_code, origin, destination, freight, client, weight_t,
+                                           load_id, simulate_drive)
 
     async def add_truck(reg: str, driver: str = "", home_city: str = ""):
         from .. import workspace
@@ -427,7 +429,9 @@ def _fleet_tools(fleet_id: int) -> list[Tool]:
         Tool("assign_trip", "Today's plan: send a truck on a trip or give it an open order (load_id). The driver is told in "
              "the cab and a route plan is made.",
              params({"vehicle_code": s, "origin": s, "destination": s, "freight": {"type": "number"}, "client": s,
-                     "weight_t": {"type": "number"}, "load_id": {"type": "integer"}}, ["vehicle_code"]), assign_trip),
+                     "weight_t": {"type": "number"}, "load_id": {"type": "integer"},
+                     "simulate_drive": {"type": "boolean", "description": "true only if the owner asks to see a demo / simulated drive"}},
+                    ["vehicle_code"]), assign_trip),
         Tool("add_truck", "Add a truck (and its driver) to the fleet; returns the driver's app link.",
              params({"reg": s, "driver": s, "home_city": s}, ["reg"]), add_truck),
         Tool("fleet_status", "Where every truck is, its trip, last update and any open incident.", params({}), fleet_status),

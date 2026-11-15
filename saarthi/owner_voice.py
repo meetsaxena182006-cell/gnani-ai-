@@ -29,7 +29,37 @@ VOICE CALL MODE (you are speaking on a live call with the owner):
   unless the owner asks for the full breakdown (then give the calculation step by step).
 - Be proactive: after answering, mention the one most important thing that needs the owner's attention
   (an unreported toll, an expiring paper/insurance, a loss-making trip, a speeding driver) if there is one.
-- ALWAYS use tools for facts. Never guess money, locations, papers or statuses."""
+- ALWAYS use tools for facts. Never guess money, locations, papers or statuses.
+- YOU RUN THE WHOLE WORKFLOW BY VOICE. The owner only speaks:
+  * New trip ("Udaipur se Haridwar, Ramesh ki gaadi", "MW-T2 ko Surat bhejo"): if the truck/driver or destination is
+    missing ask ONE short question, then call assign_trip (vehicle_code can be the driver's first name, the code or the
+    number; freight/client optional). Then say: trip set, driver told, full plan (route, breaks, diesel, tolls, weather,
+    ETA, profit) coming in about 30 seconds. If the owner wants to watch it run, call assign_trip with simulate_drive=true.
+  * New order / deal ("naya order: Pune se Hyderabad 18 ton 52000 Deccan Agro"): add_order, then ask which truck.
+  * Message for a driver ("Ramesh ko bolo dhaba pe ruk ke khana kha le"): message_driver — his agent SPEAKS it in the cab.
+  * New truck: add_truck. Profit, papers, tolls, payments, loads for empty trucks: use the matching tool."""
+
+
+def opener(fleet: dict) -> str:
+    """Jarvis-style: the CEO speaks first, gives the one-line state and asks for today's plan."""
+    try:
+        from . import sentinel
+        from .talkfirst import _first
+        h = sentinel.fleet_health(fleet["id"])
+        name = _first(fleet.get("owner_name"))
+        who = "मालिक" if name in ("बॉस", "", None) else f"{name} जी"
+        n = len(h["trucks"])
+        if not n:
+            return (f"नमस्ते {who}! मैं आपका CEO सारथी। अभी आपके ऑफिस में कोई गाड़ी नहीं है। "
+                    "बोलिए — गाड़ी का नंबर, ड्राइवर का नाम और गाड़ी कहाँ खड़ी है, मैं जोड़ देता हूँ।")
+        bad = [t for t in h["trucks"] if t["status"] == "bad"]
+        idle = [t for t in h["trucks"] if not t["trip"]]
+        state = (f"{len(bad)} गाड़ी पर ध्यान चाहिए" if bad else "सब गाड़ियाँ ठीक चल रही हैं")
+        free = f", {len(idle)} गाड़ी खाली है" if idle else ""
+        return (f"नमस्ते {who}! मैं आपका CEO सारथी। {n} गाड़ियों में {state}{free}। "
+                "आज का क्या प्लान है? कोई नई ट्रिप लगानी है? बस बोलिए — कौनसी गाड़ी, कहाँ से कहाँ।")
+    except Exception:
+        return GREETING
 
 
 class OwnerSession:
@@ -101,8 +131,9 @@ class OwnerSession:
 
             @transport.event_handler("on_client_connected")
             async def _connected(t, client):
-                db.log_agent(f"ceo:{code}", f"owner:{code}", "message", {"text": GREETING, "voice": True})
-                await self.worker.queue_frames([TTSSpeakFrame(GREETING)])
+                hello = opener(self.fleet)
+                db.log_agent(f"ceo:{code}", f"owner:{code}", "message", {"text": hello, "voice": True})
+                await self.worker.queue_frames([TTSSpeakFrame(hello)])
 
             @transport.event_handler("on_client_disconnected")
             async def _disconnected(t, client):

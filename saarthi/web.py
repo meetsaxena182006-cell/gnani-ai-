@@ -235,11 +235,22 @@ async def api_fleet(req: web.Request) -> web.Response:
                                                   "('unreported','asked')", (v["id"],))["n"],
                        "trip_km": round(t["gps_km"] or 0) if t else None,
                        "dest": [t["dest_lat"], t["dest_lon"]] if t and t.get("dest_lat") is not None else None,
+                       "route": _ws_route(t["id"]) if t else None, "simulated": _is_sim(v["id"]),
                        "origin": [t["origin_lat"], t["origin_lon"]] if t and t.get("origin_lat") is not None else None,
                        "freight": t["freight_amount"] if t else None, "client": t["client_name"] if t else None,
                        "plan": _plan_brief(t) if t else None})
         out.append({"code": f["code"], "name": f["name"], "kind": f.get("kind") or "demo", "vehicles": vs})
     return web.json_response(out)
+
+
+def _ws_route(tid: int):
+    from . import workspace
+    return workspace.ROUTES.get(tid)
+
+
+def _is_sim(vid: int) -> bool:
+    from .demo_drive import is_simulated
+    return is_simulated(vid)
 
 
 def _plan_brief(t: dict) -> dict | None:
@@ -543,7 +554,56 @@ async def api_ws_trip(req: web.Request) -> web.Response:
     b = await req.json()
     return web.json_response(await workspace.assign_trip(_ws_fleet(b), b.get("vehicle", ""), b.get("origin", ""), b.get("destination", ""),
                                                          _f(b.get("freight")), b.get("client", ""), _f(b.get("weight")),
-                                                         int(b["load_id"]) if b.get("load_id") else None))
+                                                         int(b["load_id"]) if b.get("load_id") else None,
+                                                         bool(b.get("simulate"))))
+
+
+async def api_ws_simulate(req: web.Request) -> web.Response:
+    _auth(req)
+    from . import workspace
+    b = await req.json()
+    v = workspace._vehicle_in(_ws_fleet(b), b.get("vehicle", ""))
+    if not v:
+        return web.json_response({"error": "truck not found"})
+    return web.json_response(await workspace.simulate_drive(v["id"]))
+
+
+_TTS_CACHE: dict = {}
+
+
+async def api_tts(req: web.Request) -> web.Response:
+    """Speak one message from the feed with Gnani Timbre v2.5 (driver page / office read messages aloud)."""
+    import json as _json
+    import re as _re
+    office = settings.api_shared_secret != "change_me" and req.headers.get("X-Saarthi-Key") == settings.api_shared_secret
+    if office and req.query.get("text"):          # office: speak any CEO reply text
+        row = {"payload": _json.dumps({"text": req.query["text"]}), "to_agent": "owner"}
+        rid = -abs(hash(req.query["text"]))
+    else:
+        rid = int(req.query.get("id", "0") or 0)
+        row = db.one("SELECT * FROM agent_log WHERE id=?", (rid,))
+    if not row:
+        raise web.HTTPNotFound()
+    if not office:
+        v = db.vehicle_by_token(req.query.get("v", ""), req.query.get("k", ""))
+        if not v or row["to_agent"] != f"driver:{v['code']}":
+            raise web.HTTPUnauthorized()
+    if rid not in _TTS_CACHE:
+        p = _json.loads(row["payload"] or "{}")
+        text = p.get("spoken") or p.get("speak") or p.get("text") or ""
+        text = _re.sub(r"https?://\S+", "", text)
+        text = _re.sub(r"[*_#`|>•]+|[\U0001F000-\U0001FFFF\u2600-\u27BF\uFE0F]", " ", text)
+        text = _re.sub(r"\s+", " ", text).strip()[:450]
+        if not text:
+            raise web.HTTPNotFound()
+        from .speech import get_speech
+        b = await get_speech().synthesize(text, "hi-IN")
+        if not b:
+            raise web.HTTPServiceUnavailable(text="voice off")
+        if len(_TTS_CACHE) > 200:
+            _TTS_CACHE.clear()
+        _TTS_CACHE[rid] = b
+    return web.Response(body=_TTS_CACHE[rid], content_type="audio/ogg")
 
 
 async def api_ws_import(req: web.Request) -> web.Response:
@@ -610,6 +670,8 @@ def build_app() -> web.Application:
         web.post("/api/ws/trip", api_ws_trip),
         web.post("/api/ws/import", api_ws_import),
         web.get("/api/ws/snapshot", api_ws_snapshot),
+        web.post("/api/ws/simulate", api_ws_simulate),
+        web.get("/api/tts", api_tts),
         web.static("/static", STATIC),
     ])
     return app

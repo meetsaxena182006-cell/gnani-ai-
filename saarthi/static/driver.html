@@ -175,6 +175,13 @@ function bubble(r){
   const me = r.kind === "driver_said", t = new Date(r.ts).toLocaleTimeString([], {hour:"2-digit", minute:"2-digit"});
   return `<div class="b ${me ? "me" : "ag"}">${esc(r.payload.text)}<small>${me ? "आप" : "सारथी"} · ${t}</small></div>`;
 }
+let speakQ = Promise.resolve();
+function speakRow(id){
+  speakQ = speakQ.then(async () => { try {
+    const a = new Audio(`/api/tts?v=${encodeURIComponent(V)}&k=${encodeURIComponent(K)}&id=${id}`);
+    await a.play(); await new Promise(r => { a.onended = r; a.onerror = r; setTimeout(r, 30000); });
+  } catch(_) {} });
+}
 async function poll(){
   try {
     const r = await fetch(`/api/driver/feed?v=${encodeURIComponent(V)}&k=${encodeURIComponent(K)}&since=${since}`);
@@ -187,6 +194,9 @@ async function poll(){
       const c = $("chat"); c.insertAdjacentHTML("beforeend", d.rows.map(bubble).join(""));
       since = d.rows[d.rows.length - 1].id;
       while (c.children.length > 4) c.firstElementChild.remove();
+      // not on the live voice call: read the agent's messages aloud (Gnani Timbre), so the driver never has to look
+      if (!firstPoll && !(dc && dc.readyState === "open"))
+        d.rows.filter(r => r.kind === "message").forEach(r => speakRow(r.id));
       const last = d.rows[d.rows.length - 1];
       // typed-chat replies can carry actions (songs, call buttons); the voice call delivers its own
       if (!firstPoll && last.kind === "message" && !(dc && dc.readyState === "open") &&

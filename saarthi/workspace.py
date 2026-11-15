@@ -16,6 +16,75 @@ from . import db, geo
 from .bus import bus, to_driver
 
 log = logging.getLogger("saarthi.workspace")
+ROUTES: dict[int, list] = {}      # trip id -> road route [(lat, lon), ...] (downsampled) for the office map
+SIMS: dict[int, asyncio.Task] = {}  # vehicle id -> running simulated drive
+
+
+def _thin(coords: list, n: int = 160) -> list:
+    if len(coords) <= n:
+        return [[round(a, 4), round(b, 4)] for a, b in coords]
+    step = len(coords) / n
+    out = [coords[int(i * step)] for i in range(n)] + [coords[-1]]
+    return [[round(a, 4), round(b, 4)] for a, b in out]
+
+
+async def road_route(trip_id: int, o: tuple, d: tuple) -> list:
+    try:
+        r = await asyncio.wait_for(geo.route(o[0], o[1], d[0], d[1]), 20)
+        coords = (r.get("routes") or [{}])[0].get("_coords") or []
+    except Exception as e:
+        log.warning("road route failed: %s", e)
+        coords = []
+    if coords:
+        ROUTES[trip_id] = _thin(coords)
+    return coords
+
+
+async def simulate_drive(vid: int, km_per_step: float = 6.0, step_s: float = 4.0) -> dict:
+    """SIMULATED drive (clearly labelled) along the real road route, sped up: every few seconds the truck moves a few
+    km, so tolls, planned breaks, the Sentinel and the CEO updates all fire exactly as on a real trip."""
+    from . import demo_drive, fatigue
+    from .geo import haversine_km
+    v = db.vehicle(vid)
+    t = db.active_trip(vid)
+    if not t or t.get("dest_lat") is None:
+        return {"error": "truck needs an active trip with a destination"}
+    o = (v["last_lat"], v["last_lon"]) if v["last_lat"] is not None else (t.get("origin_lat"), t.get("origin_lon"))
+    if o[0] is None:
+        return {"error": "start point unknown"}
+    coords = await road_route(t["id"], o, (t["dest_lat"], t["dest_lon"]))
+    if not coords:
+        return {"error": "road route not available right now"}
+    pts, acc = [coords[0]], 0.0
+    for a, b in zip(coords, coords[1:]):
+        acc += haversine_km(a[0], a[1], b[0], b[1])
+        if acc >= km_per_step:
+            pts.append(b)
+            acc = 0.0
+    pts.append(coords[-1])
+    if vid in SIMS and not SIMS[vid].done():
+        SIMS[vid].cancel()
+    demo_drive.SIM_IDS.add(vid)
+    f = db.fleet(v["fleet_id"])
+    db.log_agent(f"ceo:{f['code']}", f"driver:{v['code']}", "sim_drive",
+                 {"text": f"SIMULATED drive started: {t['origin']} → {t['destination']} ({len(pts)} GPS points, sped up)"})
+
+    async def _run():
+        try:
+            for lat, lon in pts:
+                await fatigue.location_update(vid, lat, lon, 54)
+                await asyncio.sleep(step_s)
+            await fatigue.location_update(vid, *pts[-1], 0)
+            await bus.send(to_driver(db.vehicle(vid), f"📍 {t['destination']} pahunch gaye (simulated drive). "
+                                                       "Maal utar jaaye to 'delivered' boliye."))
+        except asyncio.CancelledError:
+            pass
+        except Exception:
+            log.exception("simulated drive failed")
+        finally:
+            demo_drive.SIM_IDS.discard(vid)
+    SIMS[vid] = asyncio.create_task(_run())
+    return {"simulated_drive": True, "points": len(pts), "minutes": round(len(pts) * step_s / 60, 1)}
 
 
 def _code(name: str) -> str:
@@ -102,7 +171,8 @@ def _vehicle_in(fleet: dict, key: str) -> dict | None:
 
 
 async def assign_trip(fleet: dict, vehicle: str, origin: str = "", destination: str = "", freight: float | None = None,
-                      client: str = "", weight_t: float | None = None, load_id: int | None = None) -> dict:
+                      client: str = "", weight_t: float | None = None, load_id: int | None = None,
+                      simulate: bool = False) -> dict:
     """Today's plan: give a truck a trip (or an open order). The driver is told in the cab, a route plan is made."""
     v = _vehicle_in(fleet, vehicle)
     if not v:
@@ -116,6 +186,10 @@ async def assign_trip(fleet: dict, vehicle: str, origin: str = "", destination: 
         db.ex("UPDATE loads SET status='taken', taken_by_vehicle=? WHERE id=?", (v["id"], load_id))
     if not destination:
         return {"error": "destination required"}
+    if not origin and v["last_lat"] is not None:     # blank "from" = where the truck is now: name the nearest city
+        from .geo import haversine_km
+        near = min(geo.CITY.items(), key=lambda kv: haversine_km(v["last_lat"], v["last_lon"], kv[1][1], kv[1][2]))
+        origin = near[0].title()
     t = db.start_trip(v["id"], origin or "current location", destination, freight, client or None)
     try:
         o = await asyncio.wait_for(geo.geocode(origin), 12) if origin else None
@@ -138,13 +212,19 @@ async def assign_trip(fleet: dict, vehicle: str, origin: str = "", destination: 
 
     async def _plan():
         from . import planner
+        x = db.vehicle(v["id"])
+        if x["last_lat"] is not None and d:
+            await road_route(t["id"], (x["last_lat"], x["last_lon"]), (d["lat"], d["lon"]))
         try:
             await planner.plan_for_vehicle(db.vehicle(v["id"]))
         except Exception:
             log.exception("plan after assign failed")
+        if simulate:
+            await simulate_drive(v["id"])
     asyncio.create_task(_plan())
     return {"trip_id": t["id"], "vehicle": v["code"], "reg": v["reg_label"], "route": f"{origin} → {destination}",
-            "driver_told": True, "plan": "route plan is being made (arrives in the office in ~30 s)"}
+            "driver_told": True, "plan": "route plan is being made (arrives in the office in ~30 s)",
+            "simulated_drive": "starts after the plan (sped up, labelled simulated)" if simulate else None}
 
 
 async def import_orders_csv(fleet: dict, text: str) -> dict:
