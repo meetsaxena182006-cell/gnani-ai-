@@ -14,6 +14,18 @@
 | 🚚 Driver companion (live voice, Hindi + 9 more languages) | from `https://saarthi-fleet.onrender.com/links?k=<office key>` |
 | 💻 Code | https://github.com/meetsaxena182006-cell/gnani-ai- |
 
+**Test it with your own data (no demo data):** in the office press **＋ New clean fleet**. You get an empty workspace:
+1. **Setup**: add a truck and driver (number, driver, city). You get that driver's app link.
+2. Add a customer order: type it, import a CSV from Tally/Excel/Sheets, or just tell the CEO Agent
+   ("Naya order: Pune se Hyderabad 18 ton, 52000, Deccan Agro, kal subah").
+3. **Orders & today's plan**: give the truck the order. The driver is told in the cab, and the route plan (breaks, diesel,
+   tolls, weather, ETA, profit) arrives in about 30 s.
+4. Open the driver link and talk as the driver: "aaj ka plan", "diesel 150 litre 13500", "mileage kaisa hai",
+   "gaadi kharab ho gayi", "gaadi khaali hai", "malik ko bolo…". Every message reaches the office within a second.
+
+Clean fleets live in the server's database. On the free plan a restart rebuilds the database, so a judge's test fleet
+lasts until the next restart.
+
 Hosted on Render's free plan (Singapore): the first visit after it has been idle takes ~1 minute to wake up, and live voice
 is slower there than on a laptop. Film mode is pre-voiced, so it plays smoothly anywhere. If the server restarted, the film page
 shows "Prepare film again" (office key, ~4 min). **Everything in the demo trip is simulated demo data.**
