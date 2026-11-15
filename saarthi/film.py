@@ -38,9 +38,15 @@ TELUGU = (12, "తెలంగాణకు స్వాగతం రమేష్
 _voice_ok: dict[str, str] = {}
 
 # real questions put to the real agents during capture: (after step index, who, text)
-ASK = [(3, "driver", "हाँ सारथी, डीज़ल भरवा लिया — 235 लीटर, 21620 रुपये।"),
+ASK = [(1, "driver", "सारथी, आज का पूरा प्लान बताओ।"),
+       (3, "driver", "हाँ सारथी, डीज़ल भरवा लिया — 235 लीटर, 21620 रुपये।"),
        (3, "driver", "हाँ, सही है।"),
-       (13, "owner", "MW-T1 के इस हैदराबाद ट्रिप में कुल कितना ख़र्चा हुआ और कितना बचा?")]
+       (13, "driver", "मेरी गाड़ी का माइलेज कैसा चल रहा है? डीज़ल कैसे बचाऊँ?"),
+       (7, "owner", "रमेश को बोलो — आराम से चलाना, बारिश है, डिलीवरी में जल्दी नहीं है।"),
+       (13, "owner", "MW-T1 के इस हैदराबाद ट्रिप में कुल कितना ख़र्चा हुआ और कितना बचा?"),
+       (13, "owner", "नया ऑर्डर आया है — शर्मा ट्रेडर्स का, हैदराबाद से नागपुर, 18 टन, 42000 रुपये, कल सुबह तैयार।")]
+# the owner opens the CEO office: it speaks first (Jarvis-style), the owner just says the trip out loud
+OPEN_SAY = "उदयपुर से हैदराबाद ट्रिप लगाओ — रमेश की गाड़ी, डेक्कन स्टोन ट्रेडर्स का माल।"
 
 FAIL_TEXT = "samajh nahi paaya"
 
@@ -117,6 +123,15 @@ async def _capture() -> list[dict]:
     scenario.stop_auto()
     S.update(step=-1, log=[], km=0.0, fast=True, film=events, final=None)
     try:
+        try:
+            from .owner_voice import opener
+            fl = db.fleet(scenario.hero()["fleet_id"])
+            events.append(_stamp({"kind": "note", "text": "The owner opens the CEO office — voice first, like Jarvis: the CEO speaks first, "
+                                                          "the owner just talks. No forms.", "step": 0}))
+            events.append(_stamp({"kind": "ceo", "text": opener(fl), "speak": opener(fl), "live": True, "jarvis": True, "step": 0}))
+            events.append(_stamp({"kind": "owner", "text": OPEN_SAY, "speak": OPEN_SAY, "step": 0}))
+        except Exception as e:
+            log.warning("film: opener failed: %s", e)
         for i, (title, fn) in enumerate(scenario.STEPS):
             F["progress"] = f"capturing {i + 1}/{len(scenario.STEPS)}: {title}"
             events.append({"kind": "step", "step": i, "text": title})
@@ -140,11 +155,18 @@ async def _capture() -> list[dict]:
                     must = None
                     if who == "owner":       # the CEO's numbers must match the system's own trip P&L
                         must = scenario.inr(scenario.money()["profit"]).replace("₹", "")
+                    if who == "owner" and "कितना" not in q:
+                        must = None
+                    last_log = (db.one("SELECT MAX(id) AS m FROM agent_log") or {}).get("m") or 0
                     for attempt in range(4):
                         if who == "driver":
                             reply = await asyncio.wait_for(drv.handle(v, q), 45)
                         else:
-                            reply = await asyncio.wait_for(_owner_voice_answer(db.fleet(v["fleet_id"]), q), 60)
+                            from .fastlane import owner_fast
+                            fl = db.fleet(v["fleet_id"])
+                            reply = None if "बोलो" in q else await owner_fast(fl, q)
+                            if not reply:
+                                reply = await asyncio.wait_for(_owner_voice_answer(fl, q), 60)
                         flat = (reply or "").replace(" ", " ")
                         ok = bool(reply) and FAIL_TEXT not in reply and (not must or must in flat)
                         # any extra claim about the PUC must match the data (expires in 4 days at this point of the story)
@@ -157,6 +179,16 @@ async def _capture() -> list[dict]:
                         raise RuntimeError("agent did not answer")
                     kind = "saarthi" if who == "driver" else "ceo"
                     events.append(_stamp({"kind": kind, "text": reply, "speak": reply, "live": True, "step": i}))
+                    if who == "owner":       # anything the CEO sent to the driver's phone is spoken in the cab
+                        for row in db.q("SELECT * FROM agent_log WHERE id>? AND to_agent LIKE 'driver:%' AND kind='message' ORDER BY id",
+                                        (last_log,)):
+                            try:
+                                txt = json.loads(row["payload"] or "{}").get("text") or ""
+                            except Exception:
+                                txt = ""
+                            if txt:
+                                events.append(_stamp({"kind": "note", "text": "CEO Agent → Driver Agent: the owner's message reaches the cab", "step": i}))
+                                events.append(_stamp({"kind": "saarthi", "text": txt, "speak": txt, "live": True, "step": i}))
                 except Exception as e:
                     log.warning("film: agent question failed: %s", e)
                     events.pop()       # no answer -> leave the question out (never invent the agent's reply)

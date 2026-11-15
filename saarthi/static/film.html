@@ -34,6 +34,13 @@ main{display:grid;grid-template-columns:380px 1fr 420px;gap:16px;padding:16px;mi
 .stat{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:10px 12px}
 .stat small{color:var(--mute);font-size:12px}.stat b{display:block;font-size:22px}
 .office{background:var(--panel);border:1px solid var(--line);border-radius:16px;display:flex;flex-direction:column;min-height:0;overflow:hidden}
+.jv{display:flex;align-items:center;gap:12px;padding:10px 14px;border-bottom:1px solid var(--line)}
+.jorb{width:54px;height:54px;border-radius:50%;flex:none;background:radial-gradient(circle at 35% 30%,#ffe2b0 0,#f2a541 30%,#e0643a 58%,#4a1d1d 100%);
+  box-shadow:0 0 22px rgba(242,165,65,.5);transition:transform .15s}
+.jv.speak .jorb{animation:jb .5s ease-in-out infinite alternate}
+.jv.listen .jorb{background:radial-gradient(circle at 35% 30%,#c8fff0 0,#33c7a5 32%,#137a66 62%,#0b2a24 100%);box-shadow:0 0 22px rgba(51,199,165,.6);animation:jb 1s ease-in-out infinite alternate}
+@keyframes jb{to{transform:scale(1.16)}}
+.jv small{display:block;color:var(--mute);font-size:12px}.jv b{font-size:14px}
 .office h3{margin:0;padding:12px 14px;border-bottom:1px solid var(--line);font-size:16px;display:flex;justify-content:space-between}
 .money{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;padding:10px 12px;border-bottom:1px solid var(--line)}
 .money div{background:#0c1226;border-radius:10px;padding:7px 9px}.money small{color:var(--mute);font-size:11px}.money b{display:block;font-size:17px}
@@ -66,6 +73,7 @@ button.ghost{background:transparent;color:var(--ink);border:1px solid var(--line
     <div class="stats"><div class="stat"><small>Distance</small><b id="s_km">0 / 0 km</b></div><div class="stat"><small>Speed</small><b id="s_sp">0 km/h</b></div>
       <div class="stat"><small>Toll plazas (FASTag)</small><b id="s_toll">0</b></div><div class="stat"><small>Weather</small><b id="s_wx">☀️ Clear</b></div></div></div>
   <div class="office"><h3><span>🏢 CEO Office — owner view</span><span style="color:var(--mute);font-size:13px">AI CEO Agent</span></h3>
+    <div class="jv" id="jv"><div class="jorb"></div><div><b>CEO सारथी · voice-first partner</b><small id="jvs">ready — just speak</small></div></div>
     <div class="money"><div><small>Freight</small><b id="m_fr">₹0</b></div><div><small>Diesel</small><b id="m_di">₹0</b></div><div><small>Tolls</small><b id="m_to">₹0</b></div>
       <div><small>Repair</small><b id="m_re">₹0</b></div><div><small>Spent</small><b id="m_sp">₹0</b></div><div><small>Margin</small><b id="m_pr" style="color:var(--ok)">₹0</b></div></div>
     <div class="chat" id="ochat"></div></div>
@@ -73,7 +81,7 @@ button.ghost{background:transparent;color:var(--ink);border:1px solid var(--line
 <div id="caption"></div>
 <div id="cover"><div class="box">
   <h1>सारथी <span>Saarthi</span></h1>
-  <p>AI co-driver for the truck driver + AI CEO for the fleet owner — talking in Hindi</p>
+  <p>AI co-driver for the truck driver + a voice-first, Jarvis-style AI CEO for the fleet owner — talking in Hindi</p>
   <p style="color:var(--ink);font-size:21px">A complete trip: Udaipur (Rajasthan) → Hyderabad (Telangana)</p>
   <div class="labels"><span>⚠️ Simulated trip · all people, money & events are demo data</span><span>🗣️ Voices: Gnani Timbre v2.5 (TTS)</span>
     <span>🎙️ Live calls: Gnani Prisma v3.0 (STT)</span><span>🧠 Agents: Groq gpt-oss-120b · NVIDIA Nemotron backup</span><span>🛣️ Tolls: NHAI public data</span></div>
@@ -154,8 +162,11 @@ async function playClips(ids){
 }
 async function speak(ev){
   const d = bubble(ev), w = d.querySelector(".wave");
+  const jst = ev.kind === "ceo" ? "speak" : ev.kind === "owner" ? "listen" : "";
+  $("jv").className = "jv " + jst; $("jvs").textContent = jst === "speak" ? "🔊 speaking…" : jst === "listen" ? "🎙️ listening to the owner…" : "ready — just speak";
   if (ev.audio && ev.audio.length) { w.style.display = "inline-flex"; await playClips(ev.audio); w.style.display = "none"; }
   else await sleep(Math.min(7000, 1400 + (ev.text || "").length * 28));
+  $("jv").className = "jv"; $("jvs").textContent = "ready — just speak";
   await sleep(350);
 }
 async function caption(t){ const c = $("caption"); c.textContent = t; c.classList.add("on"); await sleep(Math.min(5200, 1800 + t.length * 22)); }
