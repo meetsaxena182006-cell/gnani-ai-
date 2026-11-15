@@ -244,6 +244,9 @@ _WEATHER = re.compile(r"(mausam|मौसम|barish|baarish|बारिश|kohr
 _FATIGUE = re.compile(r"(neend|नींद|thak|थक|sleepy|jhapki|झपकी|aankh band|आँख बंद)", re.I)
 _EMPTY = re.compile(r"(khali|khaali|खाली|wapsi ka load|वापसी का लोड|next load|agla load|अगला लोड|koi kaam|कोई काम)", re.I)
 _PAPERS = re.compile(r"(kagaz|kaagaz|कागज़|कागज|papers|documents|puc|insurance|इंश्योरेंस|permit|परमिट|fitness|फिटनेस)", re.I)
+_PERF = re.compile(r"(mileage|माइलेज|average|एवरेज|performance|परफॉर|परफ़ॉर|efficiency|एफिशिएंसी|driving score|"
+                   r"डीज़ल कैसे बचा|डीजल कैसे बचा|diesel (kaise )?bacha)", re.I)
+_TODAY = re.compile(r"((aaj|आज)\S*\s.*(plan|प्लान|kab ruk|कब रुक))|(trip plan|ट्रिप प्लान|kab niklu|कब निकलूँ)", re.I)
 _MECHANIC = re.compile(r"(mechanic|मैकेनिक|मिस्त्री|mistri|garage|गैराज)", re.I)
 _SKY_HI = {"clear": "साफ़", "mostly clear": "लगभग साफ़", "partly cloudy": "हल्के बादल", "overcast": "बादल छाए",
            "fog": "कोहरा", "drizzle": "बूंदाबांदी", "heavy drizzle": "तेज़ बूंदाबांदी", "rain": "बारिश",
@@ -280,6 +283,18 @@ async def driver_fast(v: dict, text: str) -> str | None:
             if res:
                 say += f" Sabse paas {res[0]['name']} hai, {res[0]['km']} km pe."
             return say
+        if _PERF.search(text):
+            return (await tools["my_performance"]())["say"]
+        if _TODAY.search(text):
+            from . import planner
+            t = db.active_trip(v["id"])
+            p = planner.latest_plan(t["id"]) if t else None
+            if p:
+                return planner.speakable_plan(p) + " Pura plan maalik ke office mein bhi hai."
+            if t:
+                r = await asyncio.wait_for(tools["plan_my_trip"](), 40)
+                return r.get("say") or None
+            return "Abhi koi trip chalu nahi hai. Kahan se kahan jaana hai bataiye, main poora plan bana dunga."
         if _EMPTY.search(text):
             r = await asyncio.wait_for(tools["find_next_load"](), 20)
             return r.get("say") or None

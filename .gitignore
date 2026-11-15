@@ -19,3 +19,4 @@ bin/
 data/review_link.txt
 data/live_link.txt
 *.pem
+.claude/

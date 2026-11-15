@@ -1,0 +1,199 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Saarthi Office</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<style>
+:root{--bg:#f6f4ef;--panel:#fff;--fg:#1d2321;--muted:#6b726f;--accent:#0f6b5c;--warn:#b7791f;--bad:#c53030;--line:#e4e0d6}
+@media (prefers-color-scheme:dark){:root{--bg:#121615;--panel:#1b201f;--fg:#ece9e2;--muted:#9aa3a0;--line:#2a312f}}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.45 system-ui,sans-serif}
+header{padding:12px 16px;display:flex;gap:12px;align-items:center;border-bottom:1px solid var(--line)}
+header b{font-size:1.1rem}select,input,button{font:inherit;padding:8px 10px;border-radius:8px;border:1px solid var(--line);background:var(--panel);color:var(--fg)}
+button{background:var(--accent);color:#fff;border:0;cursor:pointer}
+.grid{display:grid;grid-template-columns:1.3fr 1fr;gap:12px;padding:12px}
+@media (max-width:900px){.grid{grid-template-columns:1fr}}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:12px;min-width:0}
+#map{height:360px;border-radius:8px}
+table{width:100%;border-collapse:collapse}td,th{padding:6px;border-bottom:1px solid var(--line);text-align:left;font-size:.92rem}
+.live{color:var(--accent);font-weight:600}.off{color:var(--muted)}
+#log{max-height:300px;overflow:auto;font-size:.88rem}#log div{padding:4px 0;border-bottom:1px dashed var(--line)}
+#conv{height:420px;overflow:auto;display:flex;flex-direction:column;gap:6px;margin-top:8px}
+.m{padding:7px 10px;border-radius:10px;border:1px solid var(--line);font-size:.9rem;white-space:pre-wrap}
+.m.own{border-left:4px solid var(--accent)}.m.drv{border-left:4px solid var(--warn)}.m.ag{border-left:4px solid var(--muted)}
+.m small{color:var(--muted)}
+#chat{height:260px;overflow:auto;white-space:pre-wrap}.me{color:var(--accent);margin-top:8px}.bot{margin-top:4px}
+form{display:flex;gap:8px;margin-top:8px}form input{flex:1}
+#sentinel{display:flex;flex-direction:column;gap:10px}
+.sh{display:flex;align-items:center;gap:12px;flex-wrap:wrap}.sh b{font-size:1.15rem}
+.score{font-variant-numeric:tabular-nums;color:var(--muted)}
+.trk{border-top:1px solid var(--line);padding-top:8px}.trk.bad{border-left:4px solid var(--bad);padding-left:8px}
+.trk.warn{border-left:4px solid var(--warn);padding-left:8px}.trk.ok{border-left:4px solid var(--accent);padding-left:8px}
+.chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
+.chip{font-size:.8rem;padding:3px 8px;border-radius:999px;border:1px solid var(--line);cursor:default}
+.chip.ok{color:var(--accent)}.chip.warn{color:var(--warn);border-color:var(--warn)}.chip.bad{color:#fff;background:var(--bad);border-color:var(--bad)}
+</style></head><body>
+<header><b>🏢 Saarthi Office — CEO Agent</b><select id="fleet"></select><span id="st" class="off"></span><button id="talk" style="margin-left:auto;font-weight:600">🎙️ CEO से बात करें</button><span id="vst" class="off"></span><audio id="ceoOut" autoplay playsinline></audio><a id="links" style="color:var(--accent)" target="_blank">🔗 All links</a></header>
+<div style="font-size:.8rem;padding:4px 14px;opacity:.85">🎙️ Voice office powered by <b>Gnani Prisma v3.0</b> (listens) + <b>Gnani Timbre v2.5</b> (speaks) · live maps: OpenStreetMap/OSRM · live weather: Open-Meteo · all fleet data is synthetic (demo)</div>
+<div class="grid">
+  <div class="card" style="grid-column:1/-1;border:2px solid var(--accent)" id="demo">
+    <div class="sh"><b>🎬 Demo trip — Udaipur → Hyderabad (Telangana)</b><small class="off">SIMULATED truck MW-T1 · all data demo · NHAI toll plazas real (2019-20 rates)</small></div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin:8px 0">
+      <button onclick="demo('start')">▶ Start / restart</button><button onclick="demo('next')">⏭ Next event</button>
+      <button onclick="demo('auto')">⏯ Auto-play all</button><button onclick="demo('stop')" style="background:var(--muted)">⏸ Pause auto</button>
+      <span id="dkm" class="score"></span></div>
+    <div style="height:8px;background:var(--line);border-radius:6px;overflow:hidden"><div id="dbar" style="height:100%;width:0;background:var(--accent);transition:width 1s"></div></div>
+    <div style="display:grid;grid-template-columns:1fr 1.4fr;gap:12px;margin-top:8px">
+      <ol id="dsteps" style="margin:0;padding-left:20px;font-size:.9rem"></ol><div id="dlog" style="font-size:.88rem;max-height:260px;overflow:auto"></div></div>
+  </div>
+  <div class="card" style="grid-column:1/-1"><div id="sentinel"><small class="off">👁️ CEO Sentinel loading…</small></div></div>
+  <div class="card"><div id="map"></div><table id="trucks"><thead><tr><th>Truck</th><th>Driver</th><th>Trip</th><th>Plan (ETA · next stop)</th><th>Companion</th><th>Speed</th><th>Last seen</th><th>Watchdog</th></tr></thead><tbody></tbody></table></div>
+  <div class="card"><b>💬 Conversations</b> <small>(what the CEO Agent tells you, and every driver ↔ Driver Agent talk)</small>
+    <div id="conv"></div></div>
+  <div class="card" style="grid-column:1/-1"><b>💼 Business</b> <span id="biz"></span></div>
+  <div class="card" style="grid-column:1/-1"><b>🧭 Fleet load plan</b> <small>(best truck for each open load — profit after empty km)</small><div id="fplan"></div></div>
+  <div class="card"><b>Ask the CEO Agent</b><div id="chat"></div>
+    <form id="f"><input id="q" placeholder="e.g. Udaipur se Ahmedabad 16 ton, client 22000 de raha hai — profit?"><button>Ask</button></form>
+    <p style="margin:12px 0 4px"><b>FASTag statement</b> <small>(CSV from your FASTag bank / IHMCL portal)</small></p>
+    <form id="ft"><input type="file" id="ftf" accept=".csv,text/csv"><button>Reconcile</button></form><div id="ftr"></div>
+    <p style="margin:12px 0 4px"><b>Agent activity</b></p><div id="log"></div></div>
+</div>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+let KEY = new URLSearchParams(location.search).get("k"); try { if (KEY) localStorage.setItem("saarthi_key", KEY); else KEY = localStorage.getItem("saarthi_key"); } catch(_) {}
+if (!KEY) { KEY = prompt("Office key (API_SHARED_SECRET)"); try { localStorage.setItem("saarthi_key", KEY); } catch(_) {} }
+const H = {"X-Saarthi-Key": KEY, "Content-Type": "application/json"};
+const api = (p, o={}) => fetch(p, {...o, headers:H}).then(r => { if (r.status === 401) { try{localStorage.removeItem("saarthi_key")}catch(_){}; throw new Error("bad key"); } return r.json(); });
+const map = L.map("map").setView([24.55, 73.7], 9);
+const street = L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {maxZoom:19, attribution:"© OpenStreetMap"}).addTo(map);
+const sat = L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}", {maxZoom:19, attribution:"Imagery © Esri, Maxar, Earthstar Geographics"});
+L.control.layers({"Map": street, "Satellite": sat}).addTo(map);
+const markers = {}; let fitted = false;
+async function refresh(){
+  const fleets = await api("/api/fleet");
+  const sel = document.getElementById("fleet");
+  if (!sel.options.length) fleets.forEach(f => sel.add(new Option(f.name, f.code)));
+  const f = fleets.find(x => x.code === sel.value) || fleets[0]; if (!f) return;
+  const tb = document.querySelector("#trucks tbody"); tb.innerHTML = "";
+  const pts = [];
+  f.vehicles.forEach(v => {
+    tb.insertAdjacentHTML("beforeend", `<tr><td>${v.reg}</td><td>${v.driver||"-"}</td><td>${v.trip||"-"}</td>
+      <td>${v.plan? `→ ${v.plan.arrive}<br><small>${v.plan.next_stop||""}</small>` : "-"}</td>
+      <td class="${v.companion==="live"?"live":"off"}">${v.companion}</td><td>${v.speed} km/h</td>
+      <td>${v.last_seen? new Date(v.last_seen).toLocaleTimeString():"-"}</td>
+      <td>${v.issue? "⚠️ "+v.issue+" " : ""}${v.tolls_unreported? "🧾 "+v.tolls_unreported+" toll(s) unreported" : (v.issue? "" : "✅")}</td></tr>`);
+    if (v.lat != null) { pts.push([v.lat, v.lon]);
+      (markers[v.code] ||= L.marker([v.lat, v.lon]).addTo(map)).setLatLng([v.lat, v.lon]).bindPopup(`${v.reg} · ${v.driver||""}`); }
+  });
+  if (pts.length && !fitted) { map.fitBounds(pts, {padding:[40,40], maxZoom:12}); fitted = true; }
+  const sn = await api("/api/sentinel?fleet=" + encodeURIComponent(f.code));
+  const esc = x => String(x ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+  document.getElementById("sentinel").innerHTML =
+    `<div class="sh"><b>👁️ CEO Sentinel</b><b>${esc(sn.headline)}</b><span class="score">${sn.score_pct}% of checks clear · checked ${new Date(sn.checked_at).toLocaleTimeString()}</span></div>` +
+    sn.trucks.map(t => `<div class="trk ${t.status}"><b>${esc(t.reg)}</b> · ${esc(t.driver||"-")} <small>${esc(t.trip||"idle")}</small>
+      <div class="chips">${t.checks.map(c => `<span class="chip ${c.status}" title="${esc(c.detail)}">${c.status==="ok"?"✓":c.status==="warn"?"!":"✕"} ${esc(c.label)}${c.status!=="ok"? ": "+esc(c.detail):""}</span>`).join("")}</div></div>`).join("");
+  const log = await api("/api/agent-log?limit=40");
+  document.getElementById("log").innerHTML = log.map(r => `<div><small>${new Date(r.ts).toLocaleTimeString()}</small> <b>${r.from_agent}</b> → ${r.to_agent}: ${r.kind} <small>${JSON.stringify(r.payload).slice(0,120)}</small></div>`).join("");
+  document.getElementById("st").textContent = "updated " + new Date().toLocaleTimeString();
+  const b = await api("/api/business?fleet=" + encodeURIComponent(f.code));
+  const r = b.receivables, inr = x => "₹" + Math.round(x||0).toLocaleString("en-IN");
+  const overdue = r.invoices.filter(i => i.overdue_days > 0).reduce((s,i) => s + i.balance, 0);
+  const svc = b.service.filter(s => s.service_due_in_km < 1000).map(s => `${s.vehicle} (${s.service_due_in_km} km)`);
+  document.getElementById("biz").innerHTML =
+    `<div style="display:flex;flex-wrap:wrap;gap:18px;margin-top:6px">
+      <div>Receivable<br><b>${inr(r.total_receivable)}</b>${overdue? `<br><small style="color:var(--bad)">overdue ${inr(overdue)}</small>`:""}</div>
+      <div>Detention claimed (30d)<br><b>${inr(b.detention_30d.amount)}</b> <small>${b.detention_30d.claims} claims</small></div>
+      <div>Owed to drivers<br><b>${inr(b.drivers.reduce((s,d)=>s+d.balance_due_to_driver,0))}</b></div>
+      <div>Pending challans<br><b>${b.pending_challans.length}</b></div>
+      <div>Service due soon<br><b>${svc.join(", ") || "none"}</b></div>
+      <div>Parties<br>${Object.entries(r.by_party).map(([p,a]) => `${p}: ${inr(a)}`).join("<br>") || "-"}</div></div>`;
+  const fp = await api("/api/plan/fleet?fleet=" + encodeURIComponent(f.code));
+  document.getElementById("fplan").innerHTML = (fp.assignments||[]).length ?
+    `<table><tr><th>Truck</th><th>Load</th><th>Freight</th><th>Empty km</th><th>Km used loaded</th><th>Capacity</th><th>Profit</th><th>Pickup ETA</th></tr>` +
+    fp.assignments.map(a => `<tr><td>${a.vehicle}</td><td>#${a.load_id} ${a.load}${(a.add_on_loads||[]).map(x=>`<br><small>+ #${x.load_id} ${x.load} (${x.weight_t} t)</small>`).join("")}</td>
+      <td>${inr(a.freight)}</td><td>${a.deadhead_km}</td><td>${a.km_utilisation_pct}%</td><td>${a.capacity_pct ?? "-"}%</td><td><b>${inr(a.profit)}</b></td><td>${a.pickup_eta}</td></tr>`).join("") +
+    `</table><small>Total ${inr(fp.total_profit)} · fleet km utilisation ${fp.fleet_km_utilisation_pct}% · idle: ${fp.idle_trucks.join(", ")||"none"}</small>`
+    : `<small>${fp.note || "no profitable assignment right now"}</small>`;
+}
+document.getElementById("f").onsubmit = async e => { e.preventDefault();
+  const q = document.getElementById("q"), chat = document.getElementById("chat"), text = q.value.trim(); if (!text) return;
+  chat.insertAdjacentHTML("beforeend", `<div class="me">You: ${text.replace(/</g,"&lt;")}</div>`); q.value = "";
+  const r = await api("/api/ceo/chat", {method:"POST", body:JSON.stringify({fleet:document.getElementById("fleet").value, text})});
+  chat.insertAdjacentHTML("beforeend", `<div class="bot">CEO Agent: ${(r.reply||r.error||"").replace(/</g,"&lt;")}</div>`); chat.scrollTop = 1e9; };
+document.getElementById("ft").onsubmit = async e => { e.preventDefault();
+  const f = document.getElementById("ftf").files[0]; if (!f) return;
+  const r = await fetch("/api/fastag/statement", {method:"POST", headers:{"X-Saarthi-Key": KEY, "Content-Type":"text/csv"}, body: await f.text()});
+  const j = await r.json();
+  document.getElementById("ftr").textContent = `${j.rows} deductions: ${j.matched} matched to GPS crossings, ${j.suspect} suspicious (no crossing — dispute), ${j.unknown_vehicle} unknown vehicle`; refresh(); };
+// conversations: owner inbox + driver talks (2.5 s)
+let csince = 0, cfleet = "";
+const escH = s => String(s ?? "").replace(/[&<>]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;"}[c]));
+async function conv(){
+  const fl = document.getElementById("fleet").value; if (!fl) return;
+  if (fl !== cfleet) { cfleet = fl; csince = 0; document.getElementById("conv").innerHTML = ""; }
+  try {
+    const d = await api(`/api/office/feed?fleet=${encodeURIComponent(fl)}&since=${csince}`);
+    if (!d.rows.length) return;
+    const box = document.getElementById("conv");
+    box.insertAdjacentHTML("beforeend", d.rows.map(r => {
+      const t = new Date(r.ts).toLocaleTimeString([], {hour:"2-digit", minute:"2-digit"});
+      if (r.kind === "owner_said") return `<div class="m own" style="border-left-color:var(--fg)"><small>🧑‍💼 You (voice) · ${t}</small><br>${escH(r.payload.text)}</div>`;
+      if (r.kind === "driver_said") return `<div class="m drv"><small>🧑‍✈️ Driver ${escH(r.payload.vehicle)} · ${t}</small><br>${escH(r.payload.text)}</div>`;
+      if (r.to_agent.startsWith("owner")) return `<div class="m own"><small>📲 CEO Agent → you · ${t}</small><br>${escH(r.payload.text)}</div>`;
+      return `<div class="m ag"><small>🤖 Driver Agent → ${escH(r.payload.vehicle)} · ${t}</small><br>${escH(r.payload.text)}</div>`;
+    }).join(""));
+    csince = d.rows[d.rows.length - 1].id; box.scrollTop = 1e9;
+  } catch(_) {}
+}
+// ---- voice-first CEO: talk to the office manager like a phone call (Gnani listens + speaks) ----
+let vpc = null;
+async function ceoCall(){
+  const st = document.getElementById("vst"), btn = document.getElementById("talk");
+  if (vpc) { try { vpc.close(); } catch(_) {} vpc = null; btn.textContent = "🎙️ CEO से बात करें"; st.textContent = ""; return; }
+  btn.textContent = "⏹️ कॉल बंद करें"; st.textContent = " जुड़ रहा है…";
+  const fl = document.getElementById("fleet").value || "";
+  let ice = [{urls:"stun:stun.l.google.com:19302"}];
+  try { ice = await api(`/api/owner/ice?fleet=${encodeURIComponent(fl)}`); } catch(_) {}
+  vpc = new RTCPeerConnection({iceServers: ice});
+  vpc.createDataChannel("ceo", {ordered:true});
+  vpc.ontrack = e => { document.getElementById("ceoOut").srcObject = e.streams[0] || new MediaStream([e.track]); };
+  const mic = await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:true, noiseSuppression:true, autoGainControl:true, channelCount:1}});
+  vpc.addTransceiver(mic.getAudioTracks()[0], {direction:"sendrecv"});
+  vpc.addTransceiver("video", {direction:"recvonly"});
+  vpc.onconnectionstatechange = () => { st.textContent = vpc && vpc.connectionState === "connected" ? " 🟢 CEO सुन रहा है" : " " + (vpc ? vpc.connectionState : ""); };
+  await vpc.setLocalDescription(await vpc.createOffer());
+  await new Promise(r => { if (vpc.iceGatheringState === "complete") r(); else { vpc.onicegatheringstatechange = () => vpc.iceGatheringState === "complete" && r(); setTimeout(r, 2500); } });
+  const ans = await api(`/api/owner/offer?fleet=${encodeURIComponent(fl)}`, {method:"POST", body: JSON.stringify({sdp: vpc.localDescription.sdp, type: vpc.localDescription.type})});
+  await vpc.setRemoteDescription(ans);
+}
+document.getElementById("talk").onclick = () => ceoCall().catch(e => { document.getElementById("vst").textContent = " ❌ " + e.message; vpc = null; document.getElementById("talk").textContent = "🎙️ CEO से बात करें"; });
+document.getElementById("links").href = "/links?k=" + encodeURIComponent(KEY || "");
+refresh(); setInterval(refresh, 15000); setInterval(conv, 2500); setTimeout(conv, 800);
+// the CEO Agent talks first: a briefing on open, then a nudge when the owner has been quiet for a while
+async function ceoHello(open){
+  try {
+    const fl = document.getElementById("fleet").value; if (!fl) return setTimeout(() => ceoHello(open), 1500);
+    const r = await api(`/api/ceo/hello?fleet=${encodeURIComponent(fl)}${open ? "&open=1" : ""}`);
+    if (r && r.text) { const chat = document.getElementById("chat");
+      chat.insertAdjacentHTML("beforeend", `<div class="bot">CEO Agent: ${r.text.replace(/</g,"&lt;")}</div>`); chat.scrollTop = 1e9; }
+  } catch(_) {}
+}
+setTimeout(() => ceoHello(true), 1200); setInterval(() => ceoHello(false), 20000);
+
+// ---- demo trip director ----
+let demoLine = null;
+async function demo(action){
+  try { await fetch("/api/demo/trip", {method:"POST", headers:H, body: JSON.stringify({action, gap: 30})}); } catch(e) {}
+  setTimeout(demoRefresh, 400);
+}
+async function demoRefresh(){
+  let d; try { d = await api("/api/demo/trip"); } catch(e) { return; }
+  const pct = d.total_km ? Math.round(100 * d.km / d.total_km) : 0;
+  document.getElementById("dbar").style.width = pct + "%";
+  document.getElementById("dkm").textContent = d.total_km ? `${d.km} / ${d.total_km} km · ${pct}%` + (d.running ? " · ⏳ running…" : "") + (d.auto ? " · auto ▶" : "") : "not started";
+  document.getElementById("dsteps").innerHTML = d.steps.map((s, i) =>
+    `<li style="${i <= d.step ? "color:var(--accent);font-weight:600" : (i === d.step + 1 && d.running ? "color:var(--warn)" : "")}">${i <= d.step ? "✓ " : ""}${s}</li>`).join("");
+  document.getElementById("dlog").innerHTML = d.log.slice().reverse().map(l => `<div><small class="off">${l.t}</small> ${l.text}</div>`).join("");
+  if (d.route && d.route.length && !demoLine) { demoLine = L.polyline(d.route, {color:"#f2a541", weight:4, opacity:.8}).addTo(map); }
+  if (d.route && d.route.length && d.step === 0 && !d.running) map.fitBounds(demoLine.getBounds(), {padding:[20,20]});
+}
+setInterval(demoRefresh, 2000); demoRefresh();
+</script></body></html>

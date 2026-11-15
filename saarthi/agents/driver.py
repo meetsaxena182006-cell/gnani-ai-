@@ -359,6 +359,11 @@ def make_tools(vid: int, turn: Turn) -> list[Tool]:
         from .. import business
         return await business.delivered(v(), receiver)
 
+    async def my_performance(days: int = 30):
+        """Real mileage, cost per km, driving score and money-saving tips from this truck's logged data."""
+        from .. import performance
+        return performance.truck_performance(vid, days)
+
     async def find_next_load():
         from . import backhaul
         return await backhaul.match_empty(v())
@@ -484,6 +489,8 @@ def make_tools(vid: int, turn: Turn) -> list[Tool]:
              params({"depart_in_hours": n, "relief_driver": {"type": "boolean"}}), plan_my_trip),
         Tool("delivered", "Driver says the goods are delivered/unloaded ('maal utar gaya', 'delivery ho gayi'). Starts "
              "the invoice; asks for a POD photo.", params({"receiver": s}), delivered),
+        Tool("my_performance", "Driver asks about mileage/average, efficiency, performance, driving score or how to save diesel: "
+             "real numbers from logged trips and diesel + tips.", params({"days": {"type": "integer"}}), my_performance),
         Tool("find_next_load", "Truck is empty ('gaadi khaali hai', 'wapsi ka load', 'koi kaam dilao'): find, verify "
              "(papers, payload, party legitimacy) and book the best nearby load from another fleet.", params({}), find_next_load),
         Tool("at_site", "Driver reached or left the loading/unloading point (for waiting-time / detention proof).",

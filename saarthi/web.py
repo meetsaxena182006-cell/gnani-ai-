@@ -234,8 +234,11 @@ async def api_fleet(req: web.Request) -> web.Response:
                        "tolls_unreported": db.one("SELECT COUNT(*) n FROM toll_crossings WHERE vehicle_id=? AND status IN "
                                                   "('unreported','asked')", (v["id"],))["n"],
                        "trip_km": round(t["gps_km"] or 0) if t else None,
+                       "dest": [t["dest_lat"], t["dest_lon"]] if t and t.get("dest_lat") is not None else None,
+                       "origin": [t["origin_lat"], t["origin_lon"]] if t and t.get("origin_lat") is not None else None,
+                       "freight": t["freight_amount"] if t else None, "client": t["client_name"] if t else None,
                        "plan": _plan_brief(t) if t else None})
-        out.append({"code": f["code"], "name": f["name"], "vehicles": vs})
+        out.append({"code": f["code"], "name": f["name"], "kind": f.get("kind") or "demo", "vehicles": vs})
     return web.json_response(out)
 
 
@@ -494,6 +497,67 @@ async def links_page(req: web.Request) -> web.Response:
     return web.Response(text=LINKS_HTML.replace("__STATUS__", status).replace("__BODY__", body), content_type="text/html")
 
 
+# ---------- clean workspace: real business data in (fleet, trucks, orders, today's trips) ----------
+def _ws_fleet(body_or_q) -> dict:
+    from . import workspace
+    f = workspace.fleet_by_code(body_or_q.get("fleet", ""))
+    if not f:
+        raise web.HTTPBadRequest(text="unknown fleet")
+    return f
+
+
+async def api_ws_fleet(req: web.Request) -> web.Response:
+    _auth(req)
+    from . import workspace
+    b = await req.json()
+    return web.json_response(workspace.create_fleet(b.get("name", ""), b.get("owner", ""), float(b.get("diesel") or 90)))
+
+
+async def api_ws_vehicle(req: web.Request) -> web.Response:
+    _auth(req)
+    from . import workspace
+    b = await req.json()
+    return web.json_response(await workspace.add_vehicle(_ws_fleet(b), b.get("reg", ""), b.get("driver", ""), b.get("home", ""),
+                                                         b.get("vtype") or "truck_10w", float(b["mileage"]) if b.get("mileage") else None,
+                                                         b.get("insurance") or None, b.get("puc") or None))
+
+
+def _f(x):
+    try:
+        return float(x) if x not in (None, "") else None
+    except (TypeError, ValueError):
+        return None
+
+
+async def api_ws_order(req: web.Request) -> web.Response:
+    _auth(req)
+    from . import workspace
+    b = await req.json()
+    return web.json_response(await workspace.add_order(_ws_fleet(b), b.get("origin", ""), b.get("destination", ""), _f(b.get("freight")),
+                                                       _f(b.get("weight")), b.get("party", ""), b.get("ready_on") or None))
+
+
+async def api_ws_trip(req: web.Request) -> web.Response:
+    _auth(req)
+    from . import workspace
+    b = await req.json()
+    return web.json_response(await workspace.assign_trip(_ws_fleet(b), b.get("vehicle", ""), b.get("origin", ""), b.get("destination", ""),
+                                                         _f(b.get("freight")), b.get("client", ""), _f(b.get("weight")),
+                                                         int(b["load_id"]) if b.get("load_id") else None))
+
+
+async def api_ws_import(req: web.Request) -> web.Response:
+    _auth(req)
+    from . import workspace
+    return web.json_response(await workspace.import_orders_csv(_ws_fleet(req.query), await req.text()))
+
+
+async def api_ws_snapshot(req: web.Request) -> web.Response:
+    _auth(req)
+    from . import workspace
+    return web.json_response(workspace.snapshot(_ws_fleet(req.query)))
+
+
 async def health(req: web.Request) -> web.Response:
     from .config import llm_providers, reasoning_providers
     names = sorted({p["name"].split(":")[0] for p in llm_providers()} | {p["name"] for p in reasoning_providers()})
@@ -540,6 +604,12 @@ def build_app() -> web.Application:
         web.get("/api/driver/feed", api_driver_feed),
         web.get("/api/office/feed", api_office_feed),
         web.get("/links", links_page),
+        web.post("/api/ws/fleet", api_ws_fleet),
+        web.post("/api/ws/vehicle", api_ws_vehicle),
+        web.post("/api/ws/order", api_ws_order),
+        web.post("/api/ws/trip", api_ws_trip),
+        web.post("/api/ws/import", api_ws_import),
+        web.get("/api/ws/snapshot", api_ws_snapshot),
         web.static("/static", STATIC),
     ])
     return app

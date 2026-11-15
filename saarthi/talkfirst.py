@@ -268,6 +268,10 @@ def owner_opener(fleet: dict) -> str:
     h = sentinel.fleet_health(fleet["id"])
     owner = _first(fleet.get("owner_name"))
     owner = "मालिक" if owner == "बॉस" else f"{owner} जी"
+    if not h["trucks"]:
+        return (f"नमस्ते {owner}! मैं आपका CEO सारथी। आपका नया ऑफिस तैयार है, अभी इसमें कोई गाड़ी नहीं है। "
+                "Setup में पहली गाड़ी और ड्राइवर जोड़िए, फिर कोई ऑर्डर — या मुझे सीधे बोलिए: "
+                "'RJ27 GB 4411 गाड़ी जोड़ो, ड्राइवर सुरेश, उदयपुर में है'।")
     n_bad = sum(1 for t in h["trucks"] if t["status"] == "bad")
     n_warn = sum(1 for t in h["trucks"] if t["status"] == "warn")
     state = (f"{n_bad} गाड़ी पर आपका ध्यान अभी चाहिए" if n_bad else f"सब चल रहा है, {n_warn} गाड़ी में छोटी बातें बाकी"

@@ -113,6 +113,20 @@ def _fleet_tools(fleet_id: int) -> list[Tool]:
                 return v
         raise ValueError(f"No vehicle matching '{code}'. Vehicles: {[x['code'] for x in vehicles()]}")
 
+    async def add_order(origin: str, destination: str, freight: float | None = None, weight_t: float | None = None,
+                        party: str = "", ready_on: str | None = None):
+        from .. import workspace
+        return await workspace.add_order(db.fleet(fleet_id), origin, destination, freight, weight_t, party, ready_on)
+
+    async def assign_trip(vehicle_code: str, origin: str = "", destination: str = "", freight: float | None = None,
+                          client: str = "", weight_t: float | None = None, load_id: int | None = None):
+        from .. import workspace
+        return await workspace.assign_trip(db.fleet(fleet_id), vehicle_code, origin, destination, freight, client, weight_t, load_id)
+
+    async def add_truck(reg: str, driver: str = "", home_city: str = ""):
+        from .. import workspace
+        return await workspace.add_vehicle(db.fleet(fleet_id), reg, driver, home_city)
+
     async def fleet_status():
         rows = []
         for v in vehicles():
@@ -406,6 +420,16 @@ def _fleet_tools(fleet_id: int) -> list[Tool]:
              "agent, incidents, driving hours, check-ins, tolls accounted, diesel logged, unconfirmed entries, freight, "
              "e-way bill, documents) with what exactly is missing. Use for 'sab theek hai?', 'kuch miss to nahi?'.",
              params({}), fleet_health),
+        Tool("add_order", "Owner tells about a new customer order / deal ('Udaipur se Surat 20 ton, 45000, Sharma Traders, kal'). "
+             "Saves it as an open order for the fleet load plan.",
+             params({"origin": s, "destination": s, "freight": {"type": "number"}, "weight_t": {"type": "number"}, "party": s,
+                     "ready_on": s}, ["origin", "destination"]), add_order),
+        Tool("assign_trip", "Today's plan: send a truck on a trip or give it an open order (load_id). The driver is told in "
+             "the cab and a route plan is made.",
+             params({"vehicle_code": s, "origin": s, "destination": s, "freight": {"type": "number"}, "client": s,
+                     "weight_t": {"type": "number"}, "load_id": {"type": "integer"}}, ["vehicle_code"]), assign_trip),
+        Tool("add_truck", "Add a truck (and its driver) to the fleet; returns the driver's app link.",
+             params({"reg": s, "driver": s, "home_city": s}, ["reg"]), add_truck),
         Tool("fleet_status", "Where every truck is, its trip, last update and any open incident.", params({}), fleet_status),
         Tool("expenses_report", "Confirmed expenses and freight received, grouped by truck and category.",
              params({"period": {"type": "string", "enum": ["today", "week", "month", "all"]}, "vehicle_code": s}), expenses_report),
