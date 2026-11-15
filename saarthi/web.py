@@ -478,6 +478,61 @@ a{word-break:break-all;color:#0f6b5c}small{opacity:.75}button{font:inherit;paddi
 <script>document.querySelectorAll("button[data-u]").forEach(b=>b.onclick=()=>{navigator.clipboard.writeText(b.dataset.u);b.textContent="Copied"});</script></body></html>"""
 
 
+
+TRY_HTML = """<!doctype html><html lang="hi"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Saarthi — test kit (no demo data)</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&family=Noto+Sans+Devanagari:wght@400;600&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<style>:root{--bg:#0d1117;--card:#151b24;--line:#263041;--ink:#e8edf5;--mute:#9aa6b8;--accent:#f2a541;--teal:#33c7a5}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.55 Inter,"Noto Sans Devanagari",sans-serif}
+.wrap{max-width:1040px;margin:0 auto;padding:32px 16px 60px}h1{font-size:30px;margin:0 0 6px}p.sub{color:var(--mute);margin:0 0 26px}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:18px}@media(max-width:760px){.grid{grid-template-columns:1fr}}
+.card{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:22px}
+.card h2{margin:0 0 4px;font-size:20px}.card small{color:var(--mute)}
+a.big{display:block;text-align:center;margin:16px 0 10px;padding:14px;border-radius:12px;font-weight:700;text-decoration:none;color:#1b1206;background:var(--accent)}
+a.big.t{background:var(--teal);color:#062019}.qr{background:#fff;padding:10px;border-radius:10px;width:max-content;margin:12px auto 4px}
+code{background:#0b0f15;border:1px solid var(--line);padding:2px 6px;border-radius:6px;font-size:13px;word-break:break-all}
+ol{padding-left:22px;margin:8px 0 0}ol li{margin:10px 0}.say{color:var(--accent);font-weight:600}.who{font-size:12px;color:var(--teal);font-weight:700;letter-spacing:.5px}
+.note{margin-top:22px;color:var(--mute);font-size:14px}</style></head><body><div class="wrap">
+<h1>Saarthi test kit — your own empty fleet</h1>
+<p class="sub">A brand-new office with <b>no demo data</b>: one truck <b>__REG__</b> with driver <b>__DRV__</b>, parked in Udaipur, no trips, no orders. Open both sides and watch the CEO Agent and the Driver Agent work together.</p>
+<div class="grid">
+ <div class="card"><h2>1 · Owner — CEO office</h2><small>Laptop. Tap anywhere once, then just speak in Hindi.</small>
+  <a class="big" href="__OFFICE__" target="_blank">Open CEO office</a><small>Fleet code: <code>__FLEET__</code></small></div>
+ <div class="card"><h2>2 · Driver — phone app</h2><small>Scan with a phone (or open in a second tab), tap <b>Start</b>.</small>
+  <a class="big t" href="__DRIVER__" target="_blank">Open driver app</a><div class="qr" id="qr"></div></div>
+</div>
+<div class="card" style="margin-top:18px"><h2>Test the full loop (speak or type)</h2><ol>
+ <li><span class="who">OWNER</span> <span class="say">“आज का क्या प्लान है?”</span> — the CEO speaks first and tells you the truck is free.</li>
+ <li><span class="who">OWNER</span> <span class="say">“उदयपुर से जयपुर नई ट्रिप लगाओ, __DRVF__ की गाड़ी, भाड़ा 40000, चला के दिखाओ”</span> — CEO plans route, tolls, diesel, breaks, ETA and profit, sends it to the driver, and the truck starts a simulated drive on the map.</li>
+ <li><span class="who">DRIVER</span> <span class="say">“आज का प्लान बताओ”</span> — the Driver Agent reads the plan the CEO made.</li>
+ <li><span class="who">DRIVER</span> <span class="say">“डीज़ल भरवाया 120 लीटर, 10800 रुपये”</span> → confirm <span class="say">“हाँ”</span> — expense saved, the office sees it.</li>
+ <li><span class="who">OWNER</span> <span class="say">“__DRVF__ को बोलो — रात में ढाबे पर आराम कर लेना”</span> — the message is spoken aloud on the driver's phone.</li>
+ <li><span class="who">DRIVER</span> <span class="say">“टायर फट गया”</span> — the owner's office gets an emergency alert with location and nearby help.</li>
+ <li><span class="who">DRIVER</span> <span class="say">“मेरा माइलेज कैसा है?”</span> · <span class="who">OWNER</span> <span class="say">“नया ऑर्डर आया है — जयपुर से दिल्ली, 15 टन, 35000, कल सुबह”</span> · <span class="say">“इस महीने का हिसाब”</span></li>
+</ol><p class="note">Everything here is created by you. The simulated drive uses simulated GPS on real roads; a real phone's GPS is used when the truck is not simulated. Need another clean fleet? Reload this page.</p></div>
+</div><script>try{new QRCode(document.getElementById("qr"),{text:"__DRIVER__",width:170,height:170});}catch(e){}</script></body></html>"""
+
+
+async def try_page(req: web.Request) -> web.Response:
+    """One link = a fresh empty fleet + one truck + both apps, to test the CEO <-> Driver loop with no demo data."""
+    if req.query.get("k") != settings.api_shared_secret or settings.api_shared_secret == "change_me":
+        raise web.HTTPUnauthorized(text="open /try?k=<office key>")
+    import random
+    import time as _t
+    from . import workspace
+    f = workspace.create_fleet("Test Transport " + _t.strftime("%H%M%S"), "मालिक")
+    fl = workspace.fleet_by_code(f["code"])
+    reg = f"RJ27 TS {random.randint(1000, 9999)}"
+    v = await workspace.add_vehicle(fl, reg, "Raju", "Udaipur")
+    k = settings.api_shared_secret
+    office = f"{settings.public_base_url}/office?k={k}&fleet={f['code']}#home"
+    page = (TRY_HTML.replace("__REG__", html.escape(reg)).replace("__DRVF__", "Raju").replace("__DRV__", "Raju")
+            .replace("__OFFICE__", html.escape(office)).replace("__DRIVER__", html.escape(v["driver_link"]))
+            .replace("__FLEET__", html.escape(f["code"])))
+    return web.Response(text=page, content_type="text/html", headers={"Cache-Control": "no-store"})
+
+
 async def links_page(req: web.Request) -> web.Response:
     if req.query.get("k") != settings.api_shared_secret or settings.api_shared_secret == "change_me":
         raise web.HTTPUnauthorized(text="open /links?k=<office key>")
@@ -664,6 +719,7 @@ def build_app() -> web.Application:
         web.get("/api/driver/feed", api_driver_feed),
         web.get("/api/office/feed", api_office_feed),
         web.get("/links", links_page),
+        web.get("/try", try_page),
         web.post("/api/ws/fleet", api_ws_fleet),
         web.post("/api/ws/vehicle", api_ws_vehicle),
         web.post("/api/ws/order", api_ws_order),
