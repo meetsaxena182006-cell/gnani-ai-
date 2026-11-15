@@ -61,6 +61,11 @@ def _extra_keys() -> list[tuple]:
     raw = ""
     for name in ("EXTRA_LLM_KEYS", "EXTRA_LLM_KEY", "EXTRA_KEYS", "NVIDIA_API_KEY", "OPENROUTER_API_KEY", "GROQ_API_KEY2"):
         raw += "," + os.getenv(name, "")
+    # any variable name works (nvidia_api_key, open_router_api_key, ...): pick up every NVIDIA / OpenRouter key value
+    for name, val in os.environ.items():
+        v = (val or "").strip().strip("'\"")
+        if v.startswith(("nvapi-", "sk-or-")) or (("nvidia" in name.lower() or "router" in name.lower()) and v):
+            raw += "," + v
     out, n = [], {}
     # tolerate paste mistakes: spaces, quotes, new lines, semicolons, "key=" labels
     toks = [t.strip().strip("'\"") for t in _re.split(r"[\s,;|]+", raw) if t.strip()]
