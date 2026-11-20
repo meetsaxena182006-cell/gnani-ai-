@@ -67,10 +67,33 @@ async def weather_at(lat, lng):
                    "visibility_km": round((cur.get("visibility") or 10000) / 1000, 1),
                    "rain_chance_12h": rain, "source": "Open-Meteo live"}
     except Exception:
-        res = {"temp_c": None, "condition": "Unavailable", "code": 0, "wind_kmph": None, "visibility_km": None,
-               "rain_chance_12h": 0, "source": "offline"}
+        res = await _met_norway(lat, lng)
     _cache[key] = res
     return res
+
+
+MET_CODES = [("thunder", 95, "Thunderstorm"), ("heavyrain", 65, "Heavy rain"), ("rain", 61, "Rain"),
+             ("drizzle", 51, "Drizzle"), ("fog", 45, "Fog"), ("cloudy", 3, "Cloudy"), ("partlycloudy", 2, "Partly cloudy"),
+             ("fair", 1, "Mainly clear"), ("clearsky", 0, "Clear")]
+
+
+async def _met_norway(lat, lng):
+    """Backup live weather (MET Norway / yr.no, free, no key) - Open-Meteo blocks some cloud hosts."""
+    try:
+        async with httpx.AsyncClient(timeout=5.0, headers={"User-Agent": "saarthi-fleet-demo/1.0"}) as c:
+            d = (await c.get(f"https://api.met.no/weatherapi/locationforecast/2.0/compact?lat={lat:.3f}&lon={lng:.3f}")).json()
+        ts = d["properties"]["timeseries"]
+        now = ts[0]["data"]
+        sym = (now.get("next_1_hours") or now.get("next_6_hours") or {}).get("summary", {}).get("symbol_code", "clearsky")
+        code, cond = next(((c, n) for k, c, n in MET_CODES if sym.startswith(k) or k in sym), (0, "Clear"))
+        rainy = sum(1 for t in ts[:12] if (t["data"].get("next_1_hours") or {}).get("details", {}).get("precipitation_amount", 0) > 0.2)
+        det = now["instant"]["details"]
+        return {"temp_c": det.get("air_temperature"), "condition": cond, "code": code,
+                "wind_kmph": round(det.get("wind_speed", 0) * 3.6, 1), "visibility_km": 2.0 if code == 45 else 10.0,
+                "rain_chance_12h": round(100 * rainy / 12), "source": "MET Norway live"}
+    except Exception:
+        return {"temp_c": None, "condition": "Unavailable", "code": 0, "wind_kmph": None, "visibility_km": None,
+                "rain_chance_12h": 0, "source": "offline"}
 
 
 def weather_factor(w):
