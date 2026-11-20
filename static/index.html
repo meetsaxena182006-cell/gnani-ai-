@@ -177,6 +177,7 @@ td{padding:7px 10px;border-bottom:1px solid #15203a;color:#cdd8ea}
   <a class="btn" href="/ceo" target="_blank">👔 CEO Agent</a>
   <a class="btn" href="/dash" target="_blank">🤖 Saarthi Dash</a>
   <button class="btn" onclick="resetAll()">↺ Reset</button>
+  <button class="btn" id="vbtn" onclick="SaarthiVoice.on?SaarthiVoice.stop():SaarthiVoice.start()" title="Hands-free: Saarthi talks first, listens, acts, speaks">🎙 Voice mode</button>
   <button class="btn primary" onclick="runDemo()">▶ Run demo</button>
 </header>
 
@@ -309,7 +310,8 @@ function addEvent(e){ const f=$("#feed"); const d=document.createElement("div");
   d.querySelector(".tx").textContent=e.text; f.appendChild(d); while(f.children.length>140) f.firstChild.remove(); f.scrollTop=f.scrollHeight;
   if(e.truck&&(e.kind==="alert")) focusTruck(e.truck);
   if(e.data&&e.data.route) showRoute(e.data.route);
-  if(e.kind==="resolved"){toast(e); running.delete(e.data.playbook); chaos()}
+  if(e.kind==="resolved"){toast(e); running.delete(e.data.playbook); chaos(); window.SaarthiVoice&&SaarthiVoice.announce(e.text)}
+  if(e.kind==="relay"&&window.SaarthiVoice) SaarthiVoice.announce(e.text.replace("📨 ",""))
 }
 function toast(e){const t=document.createElement("div"); t.className="toast";
   t.innerHTML=`<h4><span>✅ ${e.data.title}</span><span class="rs">${e.data.impact_rs?"+"+fmt(e.data.impact_rs):""}</span></h4><p></p>`;
@@ -327,7 +329,7 @@ function showAnalyst(r){ drawer(true); $("#aq").textContent="“"+r.question+"�
 // ---------- actions
 async function api(p,b){const r=await fetch(p,b?{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(b)}:{}); return r.json()}
 async function runPB(name,target){running.add(name); chaos(); const r=await api("/api/playbook",{name,target}); if(!r.ok){running.delete(name);chaos()}}
-async function send(text){ if(!text) return; $("#cmd").value=""; await api("/api/chat",{text,role:"owner"}) }
+async function send(text){ if(!text) return ""; $("#cmd").value=""; const r=await api("/api/chat",{text,role:"owner"}); return r.reply||"" }
 async function ask(q){ drawer(true); $("#aq").textContent="“"+q+"” · thinking…"; await api("/api/analyst",{question:q}) }
 async function resetAll(){ await api("/api/reset",{}); $("#feed").innerHTML=""; for(const id in markers){map.removeLayer(markers[id])} markers={};
   if(routeLine){map.removeLayer(routeLine);routeLine=null} drawer(false); running.clear(); chaos(); await load() }
@@ -338,7 +340,7 @@ document.querySelectorAll(".qchip").forEach(c=>c.onclick=()=>ask(c.textContent))
 const SR=window.SpeechRecognition||window.webkitSpeechRecognition; let rec=null;
 $("#mic").onclick=()=>{ if(!SR){alert("Voice input needs Chrome or Edge.");return}
   if(rec){rec.stop();return} rec=new SR(); rec.lang="hi-IN"; rec.interimResults=true; $("#mic").classList.add("on");
-  rec.onresult=e=>{const t=[...e.results].map(r=>r[0].transcript).join(""); $("#cmd").value=t; if(e.results[e.results.length-1].isFinal) send(t)};
+  rec.onresult=e=>{const t=[...e.results].map(r=>r[0].transcript).join(""); $("#cmd").value=t; if(e.results[e.results.length-1].isFinal) send(t).then(r=>SaarthiVoice.speak(r))};
   rec.onend=()=>{$("#mic").classList.remove("on"); rec=null}; rec.start() };
 
 // ---------- live stream
@@ -385,6 +387,16 @@ async function runDemo(){ await api("/api/reset",{}); $("#feed").innerHTML=""; d
     else if(kind==="end"){ cap("",""); title("","",false); window.DEMO_DONE=true } }
 }
 if(new URLSearchParams(location.search).get("demo")==="1") setTimeout(runDemo,1500);
+</script>
+<script src="/static/voice.js"></script>
+<script>
+SaarthiVoice.init({ input: $("#cmd"), ask: send,
+  onState: on => { $("#vbtn").textContent = on ? "■ Stop voice" : "🎙 Voice mode"; $("#vbtn").classList.toggle("primary", on) },
+  greet: async () => { const s = await api("/api/state"), k = s.kpis, sn = await api("/api/ceo/sentinel");
+    const flag = sn.rows.find(r => !r.ok);
+    return `Namaste! Saarthi here. ${k.on_road} trucks are on the road, ${k.loading} loading, ${k.empty} free. ` +
+      (flag ? `Attention: ${flag.truck}, ${flag.issues[0]}. ` : "All trucks are clear. ") +
+      `Bataiye, kya karna hai? For example: naya order aaya hai, ya truck kharab ho gaya.` } });
 </script>
 </body>
 </html>

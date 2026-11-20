@@ -18,4 +18,9 @@ small{display:block;text-align:center;color:#5d6f8f;margin-top:26px;font-size:12
 <a href="/fleet"><i>🛰</i><b>Fleet Agent</b><span>Operations command center: live map, 10 agents resolving breakdowns, empty trucks, refusals, cancellations, detention and documents.</span></a>
 <a class="ceo" href="/ceo"><i>👔</i><b>CEO Agent</b><span>The owner's AI business partner: morning brief, voice questions on profit and diesel, decisions to approve.</span></a>
 <a href="/dash"><i>🤖</i><b>Saarthi Dash</b><span>The driver's dashboard robot: Hindi voice, trip updates, fatigue alerts, report problems hands-free.</span></a>
-</div><small>Simulated demo fleet · live weather (Open-Meteo) and road routes (OSRM) · powered by Google Gemini</small></div></body></html>
+</div>
+<script>addEventListener("load",()=>document.querySelectorAll("#media a").forEach(a=>fetch(a.href,{method:"HEAD"}).then(r=>{if(!r.ok)a.remove()}).catch(()=>a.remove())))</script>
+<p id="media" style="margin:18px 0 6px;display:flex;gap:10px;justify-content:center;flex-wrap:wrap">
+<a style="padding:9px 16px;border-radius:10px;border:1px solid #26365a;color:#e6edf7;text-decoration:none;font-weight:600" href="/static/media/Saarthi_AI_Demo_3min.mp4" target="_blank">▶ Watch the 3-min demo</a>
+<a style="padding:9px 16px;border-radius:10px;border:1px solid #26365a;color:#e6edf7;text-decoration:none;font-weight:600" href="/static/media/Saarthi_AI_Problems_in_Numbers.pdf" target="_blank">📄 The problem in numbers (PDF)</a></p>
+<small>Simulated demo fleet · live weather (Open-Meteo / MET Norway), road routes (OSRM), NHAI toll plazas (Govt open data) · powered by Google Gemini</small></div></body></html>

@@ -17,3 +17,6 @@ demo/
 # OS / editor
 .DS_Store
 Thumbs.db
+
+# big media served locally (too large for the hotspot push)
+static/media/*.mp4

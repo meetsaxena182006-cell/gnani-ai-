@@ -86,6 +86,7 @@ h1{font-size:16px;font-weight:800;white-space:nowrap}h1 small{display:block;font
   <div class="spacer"></div>
   <a class="btn" href="/fleet" target="_blank">🛰 Fleet Agent</a>
   <a class="btn" href="/dash" target="_blank">🤖 Saarthi Dash</a>
+  <button class="btn" id="vbtn" onclick="SaarthiVoice.on?SaarthiVoice.stop():SaarthiVoice.start()" title="Hands-free: the CEO Agent talks first, listens, acts, speaks">🎙 Voice mode</button>
   <button class="btn gold" onclick="brief()">☀ Morning brief</button>
 </header>
 <div class="wrap">
@@ -127,7 +128,8 @@ function bubble(cls,text,tools){const d=document.createElement("div"); d.classNa
   if(tools&&tools.length){const t=document.createElement("div"); t.className="tools"; t.innerHTML=tools.map(x=>`<span>⚙ ${x.tool}${x.args&&x.args.name?": "+x.args.name:""}</span>`).join(""); d.appendChild(t)}
   $("#convo").appendChild(d); $("#convo").scrollTop=1e9; return d}
 async function ask(text){ if(!text) return; $("#q").value=""; bubble("me",text); const th=bubble("think","CEO Agent is thinking with your data…");
-  const r=await api("/api/chat",{text,role:"ceo"}); th.remove(); bubble("ai",r.reply,r.tools); say(r.reply) }
+  const r=await api("/api/chat",{text,role:"ceo"}); th.remove(); bubble("ai",r.reply,r.tools);
+  if(!window.SaarthiVoice||!SaarthiVoice.on) say(r.reply); return r.reply }
 async function brief(){ $("#brief").textContent="Preparing your brief…"; const b=await api("/api/ceo/brief");
   $("#brief").textContent=b.brief; $("#kP").textContent=fmt(b.profit_30d); $("#kR").textContent=fmt(b.revenue_30d); $("#kT").textContent=fmt(b.kpis.revenue_recovered);
   $("#props").innerHTML=b.proposals.map((p,i)=>`<div class="prop" id="p${i}"><div class="ic">${p.id==="service"?"⛽":p.id==="empty"?"🔁":"📄"}</div>
@@ -153,7 +155,9 @@ const es=new EventSource("/api/events");
 es.onmessage=m=>{const d=JSON.parse(m.data);
   if(d.type==="analyst") showAnalyst(d);
   if(d.type==="state"&&d.kpis) $("#kT").textContent=fmt(d.kpis.revenue_recovered);
-  if(d.type==="event"&&d.kind==="relay"){const x=document.createElement("div"); x.className="d relay"; x.textContent=d.text; $("#did").prepend(x)}
+  if(d.type==="event"&&d.kind==="relay"){const x=document.createElement("div"); x.className="d relay"; x.textContent=d.text; $("#did").prepend(x);
+    if(/for the owner/.test(d.text)) SaarthiVoice.announce(d.text.replace("📨 ",""))}
+  if(d.type==="event"&&d.kind==="resolved") SaarthiVoice.announce(d.text);
   if(d.type==="event"&&d.kind==="resolved"&&d.data.playbook==="sentinel") sentinel(false);
   if(d.type==="event"&&d.kind==="resolved"){const x=document.createElement("div"); x.className="d";
     x.innerHTML=`<span></span>${d.data.impact_rs?`<b>+${fmt(d.data.impact_rs)}</b>`:""}`; x.querySelector("span").textContent=d.text; $("#did").prepend(x)} };
@@ -176,6 +180,18 @@ async function runDemo(){ voice=false; await api("/api/pace",{pace:0.65}); const
     else if(k==="approve"){const btn=document.querySelector("#props .btn"); if(btn) btn.click()}
     else if(k==="end"){cap("","");title("","",false);window.DEMO_DONE=true}}}
 if(new URLSearchParams(location.search).get("demo")==="1") setTimeout(runDemo,1500); else brief();
+</script>
+<script src="/static/voice.js"></script>
+<script>
+SaarthiVoice.init({ input: $("#q"),
+  ask: async t => { $("#q").value = "";
+    if (/approve|manzoor|haan kar|kar do|go ahead/i.test(t)) { const btn = document.querySelector("#props .prop:not(.done) .btn");
+      if (btn) { const title = btn.closest(".prop").querySelector("b").textContent; bubble("me", t); btn.click();
+        return `Approved: ${title}. Agents ko kaam de diya hai, result aate hi bataunga.` } }
+    return await ask(t) },
+  onState: on => { $("#vbtn").textContent = on ? "■ Stop voice" : "🎙 Voice mode"; $("#vbtn").classList.toggle("gold", on) },
+  greet: async () => { voice = false; const b = await brief(); voice = true;
+    const p = b.proposals[0]; return b.brief + (p ? ` Ek decision pending hai: ${p.title}. Approve karna ho to boliye "approve karo".` : "") + " Aur kuch poochna hai?" } });
 </script>
 </body>
 </html>
