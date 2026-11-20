@@ -1,0 +1,390 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Saarthi AI · Fleet Command</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<style>
+:root{
+  --bg:#070d1a; --panel:#0e1729; --panel2:#121d33; --line:#1d2a44; --line2:#26365a;
+  --text:#e6edf7; --muted:#8a9bb8; --dim:#5d6f8f;
+  --teal:#14b8a6; --teal2:#2dd4bf; --amber:#f59e0b; --red:#f43f5e; --green:#22c55e; --violet:#a78bfa; --sky:#38bdf8;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{background:radial-gradient(1200px 600px at 70% -10%,#0f2a3a 0,transparent 60%),var(--bg);color:var(--text);
+  font:13px/1.45 Inter,system-ui,sans-serif;overflow-x:hidden}
+.mono{font-family:"JetBrains Mono",monospace}
+header{height:58px;display:flex;align-items:center;gap:14px;padding:0 18px;border-bottom:1px solid var(--line);
+  background:rgba(7,13,26,.85);backdrop-filter:blur(8px);position:sticky;top:0;z-index:1000}
+.brand{display:flex;align-items:center;gap:10px}
+.orb{width:32px;height:32px;border-radius:10px;background:linear-gradient(135deg,#0d9488,#0e7490);display:grid;place-items:center;
+  box-shadow:0 0 18px rgba(20,184,166,.45)}
+.orb i{width:16px;height:8px;display:flex;justify-content:space-between}
+.orb i b{width:5px;height:8px;border-radius:3px;background:#ecfeff}
+.brand h1{font-size:16px;font-weight:800;letter-spacing:.2px}
+.brand small{display:block;color:var(--muted);font-size:11px;font-weight:500;margin-top:-2px;white-space:nowrap}
+.brand h1,.btn,.chip{white-space:nowrap}
+.chips{display:flex;gap:8px;margin-left:12px;flex-wrap:wrap}
+.chip{display:flex;align-items:center;gap:6px;padding:4px 10px;border:1px solid var(--line2);border-radius:999px;color:var(--muted);
+  font-size:11px;background:var(--panel)}
+.chip .dot{width:7px;height:7px;border-radius:50%;background:var(--dim)}
+.chip.on .dot{background:var(--green);box-shadow:0 0 8px var(--green)}
+.chip.warn{color:#fcd34d;border-color:#5b4a1a}
+.spacer{flex:1}
+.btn{border:1px solid var(--line2);background:var(--panel2);color:var(--text);padding:7px 12px;border-radius:9px;font:600 12px Inter;
+  cursor:pointer;display:inline-flex;gap:6px;align-items:center;transition:.15s}
+.btn:hover{border-color:var(--teal);color:var(--teal2)}
+.btn.primary{background:linear-gradient(135deg,#0d9488,#0891b2);border-color:transparent;color:#fff}
+.btn.primary:hover{filter:brightness(1.1);color:#fff}
+.clock{color:var(--muted);font-size:12px;min-width:64px;text-align:right}
+
+.kpis{display:grid;grid-template-columns:repeat(6,1fr);gap:10px;padding:12px 18px 0}
+.kpi{background:linear-gradient(180deg,var(--panel2),var(--panel));border:1px solid var(--line);border-radius:12px;padding:10px 12px}
+.kpi label{color:var(--muted);font-size:11px;font-weight:500;display:block}
+.kpi b{font-size:21px;font-weight:800;letter-spacing:-.3px}
+.kpi span{font-size:11px;color:var(--dim)}
+.kpi.t b{color:var(--teal2)} .kpi.g b{color:var(--green)} .kpi.a b{color:var(--amber)} .kpi.r b{color:#fb7185}
+
+.grid{display:grid;grid-template-columns:1.35fr 1fr 290px;gap:10px;padding:10px 18px;height:calc(100vh - 58px - 80px - 74px);min-height:460px}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:14px;display:flex;flex-direction:column;overflow:hidden;position:relative}
+.ph{display:flex;align-items:center;gap:8px;padding:10px 12px;border-bottom:1px solid var(--line);font-weight:700;font-size:12.5px}
+.ph .sub{color:var(--dim);font-weight:500;font-size:11px}
+.ph .live{margin-left:auto;display:flex;gap:6px;align-items:center;color:var(--green);font-size:11px;font-weight:600}
+.ph .live::before{content:"";width:7px;height:7px;border-radius:50%;background:var(--green);animation:pulse 1.6s infinite}
+@keyframes pulse{0%{box-shadow:0 0 0 0 rgba(34,197,94,.6)}100%{box-shadow:0 0 0 9px rgba(34,197,94,0)}}
+#map{flex:1;background:#0b1220}
+.leaflet-container{background:#0b1220;font-family:Inter}
+.leaflet-popup-content-wrapper,.leaflet-popup-tip{background:#0e1729;color:var(--text);border:1px solid var(--line2)}
+.legend{position:absolute;left:10px;bottom:10px;z-index:500;background:rgba(14,23,41,.92);border:1px solid var(--line2);border-radius:10px;
+  padding:7px 10px;display:flex;gap:10px;font-size:11px;color:var(--muted)}
+.legend i{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:4px;vertical-align:-1px}
+.pip{position:absolute;right:10px;bottom:10px;z-index:600;width:196px;height:128px;border-radius:14px;overflow:hidden;
+  border:1px solid #155e63;box-shadow:0 8px 30px rgba(0,0,0,.5),0 0 22px rgba(6,182,212,.25)}
+.pip iframe{width:100%;height:100%;border:0}
+.truckpin{width:26px;height:26px;border-radius:9px;display:grid;place-items:center;font-size:13px;border:2px solid #0b1220;
+  box-shadow:0 2px 8px rgba(0,0,0,.6)}
+.truckpin.focus{animation:ring 1s ease-out 3}
+@keyframes ring{0%{box-shadow:0 0 0 0 rgba(255,255,255,.7)}100%{box-shadow:0 0 0 18px rgba(255,255,255,0)}}
+
+#feed{flex:1;overflow-y:auto;padding:8px 10px 12px;scroll-behavior:smooth}
+.ev{display:flex;gap:9px;padding:8px 9px;border-radius:10px;margin-bottom:6px;background:var(--panel2);border:1px solid transparent;
+  animation:in .35s ease}
+@keyframes in{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+.ev .bar{width:3px;border-radius:3px;flex:none}
+.ev .who{font-size:11px;font-weight:700;display:flex;gap:8px;align-items:center}
+.ev .who time{color:var(--dim);font-weight:500}
+.ev .tx{color:#cdd8ea;margin-top:2px}
+.ev.alert{border-color:#5b4214;background:linear-gradient(90deg,rgba(245,158,11,.10),var(--panel2) 60%)}
+.ev.call,.ev.call-line{background:transparent;padding:3px 9px 3px 22px;margin-bottom:2px}
+.ev.call .tx,.ev.call-line .tx{font-style:italic;color:var(--muted)}
+.ev.call-line .tx::before{content:"☎ ";font-style:normal}
+.ev.dash{border-color:#164e63;background:linear-gradient(90deg,rgba(6,182,212,.12),var(--panel2) 70%)}
+.ev.dash .tx::before{content:"🗣 ";}
+.ev.resolved{border-color:#14532d;background:linear-gradient(90deg,rgba(34,197,94,.14),var(--panel2) 70%)}
+.ev.resolved .tx{color:#dcfce7;font-weight:500}
+.ev.relay{border-color:#4a3b12;background:linear-gradient(90deg,rgba(245,196,81,.13),var(--panel2) 70%)}
+.ev.user{background:#0b2530;border-color:#134e4a}
+.ev.user .tx{color:#99f6e4;font-weight:600}
+.impact{margin-left:auto;color:var(--green);font-weight:800}
+.tag{font-size:9.5px;padding:1px 6px;border-radius:5px;background:#1b2a46;color:var(--muted);font-weight:600}
+
+#chaos{flex:1;overflow-y:auto;padding:8px}
+.pb{width:100%;text-align:left;display:flex;gap:10px;align-items:center;padding:9px 10px;margin-bottom:6px;border-radius:11px;
+  background:var(--panel2);border:1px solid var(--line);color:var(--text);cursor:pointer;font:inherit;transition:.15s}
+.pb:hover{border-color:var(--teal);transform:translateX(2px)}
+.pb .ic{width:30px;height:30px;border-radius:9px;display:grid;place-items:center;font-size:15px;flex:none}
+.pb b{font-size:12.5px;display:block}
+.pb small{color:var(--muted);font-size:11px}
+.pb.run{border-color:var(--amber)}
+.pb.run .ic{animation:spin 1.2s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+.cmd{display:flex;gap:10px;align-items:center;padding:0 18px 12px}
+.cmdbox{flex:1;display:flex;align-items:center;gap:10px;background:var(--panel);border:1px solid var(--line2);border-radius:14px;padding:8px 8px 8px 14px}
+.cmdbox:focus-within{border-color:var(--teal);box-shadow:0 0 0 3px rgba(20,184,166,.15)}
+.cmdbox input{flex:1;background:transparent;border:0;outline:0;color:var(--text);font:500 14px Inter}
+.mic{width:40px;height:40px;border-radius:12px;border:0;cursor:pointer;background:linear-gradient(135deg,#0d9488,#0891b2);color:#fff;font-size:17px}
+.mic.on{background:var(--red);animation:pulse 1.2s infinite}
+.hint{color:var(--dim);font-size:11px;white-space:nowrap}
+
+.below{display:grid;grid-template-columns:1.2fr 1fr;gap:10px;padding:0 18px 18px}
+table{width:100%;border-collapse:collapse;font-size:12px}
+th{color:var(--dim);font-weight:600;text-align:left;padding:7px 10px;border-bottom:1px solid var(--line);font-size:11px}
+td{padding:7px 10px;border-bottom:1px solid #15203a;color:#cdd8ea}
+.st{font-size:10.5px;font-weight:700;padding:2px 8px;border-radius:999px;display:inline-block}
+.st.on_the_way{background:#0c3b46;color:#67e8f9}.st.loading,.st.assigned{background:#3b2f0c;color:#fcd34d}
+.st.delivered{background:#0f3a24;color:#86efac}.st.cancelled{background:#3d1220;color:#fda4af}
+.prog{height:5px;background:#1b2a46;border-radius:9px;overflow:hidden;width:90px}
+.prog i{display:block;height:100%;background:linear-gradient(90deg,var(--teal),var(--sky))}
+.days{font-weight:700}.days.bad{color:#fb7185}.days.mid{color:#fcd34d}.days.ok{color:#86efac}
+
+#drawer{position:fixed;right:18px;top:150px;width:430px;z-index:1200;background:rgba(14,23,41,.97);border:1px solid #1e3a5f;border-radius:16px;
+  box-shadow:0 18px 60px rgba(0,0,0,.6);transform:translateX(120%);transition:transform .45s cubic-bezier(.2,.8,.2,1);overflow:hidden}
+#drawer.open{transform:none}
+#drawer .ph{background:linear-gradient(90deg,rgba(96,165,250,.15),transparent)}
+#drawer .body{padding:12px}
+#drawer .q{color:#93c5fd;font-weight:600;margin-bottom:8px}
+#drawer .ans{color:#e2e8f0;margin:10px 0 6px;font-size:13px}
+#drawer pre{font:11px "JetBrains Mono";color:#7dd3fc;background:#0a1324;border:1px solid var(--line);border-radius:8px;padding:8px;
+  white-space:pre-wrap;max-height:70px;overflow:auto}
+.chipsq{display:flex;flex-wrap:wrap;gap:6px;padding:10px 12px;border-top:1px solid var(--line)}
+.qchip{font:500 11px Inter;padding:5px 9px;border-radius:999px;border:1px solid var(--line2);background:var(--panel2);color:var(--muted);cursor:pointer}
+.qchip:hover{color:var(--teal2);border-color:var(--teal)}
+
+#toasts{position:fixed;top:68px;right:18px;z-index:1300;display:flex;flex-direction:column;gap:8px;width:360px}
+.toast{background:linear-gradient(135deg,#052e1f,#0b2a24);border:1px solid #166534;border-radius:14px;padding:12px 14px;
+  box-shadow:0 12px 40px rgba(0,0,0,.5);animation:tin .4s ease}
+@keyframes tin{from{opacity:0;transform:translateX(30px)}to{opacity:1;transform:none}}
+.toast h4{font-size:12px;color:#86efac;display:flex;justify-content:space-between}
+.toast p{font-size:12.5px;color:#dcfce7;margin-top:4px}
+.toast .rs{font-size:18px;font-weight:800;color:#4ade80}
+
+#caption{position:fixed;left:50%;bottom:92px;transform:translateX(-50%);z-index:1400;max-width:880px;text-align:center;
+  background:rgba(4,8,18,.88);border:1px solid #1f3b5a;border-radius:14px;padding:12px 22px;font-size:18px;font-weight:600;
+  color:#f8fafc;box-shadow:0 10px 40px rgba(0,0,0,.5);display:none}
+#caption small{display:block;color:var(--teal2);font-size:11px;letter-spacing:1.5px;font-weight:700;margin-bottom:3px}
+#titlecard{position:fixed;inset:0;z-index:2000;display:none;place-items:center;background:radial-gradient(800px 500px at 50% 40%,#0f3a44,#050a14);}
+#titlecard .in{text-align:center}
+#titlecard h2{font-size:54px;font-weight:800;letter-spacing:-1px}
+#titlecard p{color:var(--muted);font-size:18px;margin-top:8px}
+#titlecard .big{width:90px;height:90px;border-radius:26px;margin:0 auto 18px;background:linear-gradient(135deg,#0d9488,#0e7490);
+  display:grid;place-items:center;box-shadow:0 0 50px rgba(20,184,166,.5)}
+#titlecard .big i{width:46px;height:20px;display:flex;justify-content:space-between}
+#titlecard .big b{width:14px;height:20px;border-radius:7px;background:#ecfeff}
+@media (max-width:1420px){.chip.wx{display:none}}
+@media (max-width:1100px){.grid{grid-template-columns:1fr;height:auto}.grid>.panel{height:420px}.kpis{grid-template-columns:repeat(3,1fr)}
+  .below{grid-template-columns:1fr}.chips{display:none}}
+</style>
+</head>
+<body>
+<header>
+  <div class="brand"><div class="orb"><i><b></b><b></b></i></div>
+    <div><h1>Saarthi Fleet Agent</h1><small>Agentic operations command center</small></div></div>
+  <div class="chips">
+    <span class="chip" id="cGem"><span class="dot"></span><span>Gemini</span></span>
+    <span class="chip" id="cBq"><span class="dot"></span><span>Fleet Analyst</span></span>
+    <span class="chip on wx"><span class="dot"></span>Open-Meteo weather</span>
+    <span class="chip warn">⚠ Simulated demo fleet</span>
+  </div>
+  <div class="spacer"></div>
+  <span class="clock mono" id="clock"></span>
+  <a class="btn" href="/ceo" target="_blank">👔 CEO Agent</a>
+  <a class="btn" href="/dash" target="_blank">🤖 Saarthi Dash</a>
+  <button class="btn" onclick="resetAll()">↺ Reset</button>
+  <button class="btn primary" onclick="runDemo()">▶ Run demo</button>
+</header>
+
+<section class="kpis">
+  <div class="kpi t"><label>On the road</label><b id="kRoad">–</b> <span id="kFleet"></span></div>
+  <div class="kpi a"><label>Loading / waiting</label><b id="kLoad">–</b> <span>trucks</span></div>
+  <div class="kpi"><label>Free / empty</label><b id="kEmpty">–</b> <span>trucks</span></div>
+  <div class="kpi g"><label>Revenue recovered today</label><b id="kRev">–</b></div>
+  <div class="kpi g"><label>Incidents auto-resolved</label><b id="kRes">–</b> <span id="kKm"></span></div>
+  <div class="kpi r"><label>Detention billed</label><b id="kDet">–</b></div>
+</section>
+
+<main class="grid">
+  <div class="panel">
+    <div class="ph">🗺 Live fleet map <span class="sub">routes · weather · predicted traffic</span><span class="live">LIVE</span></div>
+    <div id="map"></div>
+    <div class="legend"><span><i style="background:#22d3ee"></i>On the way</span><span><i style="background:#fbbf24"></i>Loading/waiting</span>
+      <span><i style="background:#94a3b8"></i>Free</span><span><i style="background:#f43f5e"></i>Breakdown</span></div>
+    <div class="pip"><iframe id="pipframe" src="/dash?mini=1&follow=1" title="Saarthi Dash"></iframe></div>
+  </div>
+  <div class="panel">
+    <div class="ph">⚡ Agent activity <span class="sub">10 agents coordinating</span><span class="live">STREAMING</span></div>
+    <div id="feed"></div>
+  </div>
+  <div class="panel">
+    <div class="ph">🛠 Chaos control <span class="sub">one tap = agents take over</span></div>
+    <div id="chaos"></div>
+  </div>
+</main>
+
+<div class="cmd">
+  <div class="cmdbox">
+    <span>✨</span>
+    <input id="cmd" placeholder="Ask or command Saarthi… e.g. “Is mahine sabse zyada nuksaan kaunsa truck kar raha hai?”" autocomplete="off">
+    <span class="hint">Hindi · Hinglish · English</span>
+    <button class="mic" id="mic" title="Speak">🎙</button>
+  </div>
+</div>
+
+<section class="below">
+  <div class="panel"><div class="ph">📦 Orders <span class="sub">assigned → loading → on the way → delivered</span></div>
+    <div style="overflow:auto;max-height:340px"><table><thead><tr><th>Order</th><th>Route</th><th>Cargo</th><th>Truck</th><th>Status</th><th>Progress</th><th>ETA</th><th>Freight</th></tr></thead><tbody id="orders"></tbody></table></div></div>
+  <div class="panel"><div class="ph">📄 Compliance <span class="sub">documents expiring in 30 days</span></div>
+    <div style="overflow:auto;max-height:340px"><table><thead><tr><th>Truck</th><th>Document</th><th>Expires</th><th>Days left</th></tr></thead><tbody id="docs"></tbody></table></div></div>
+</section>
+
+<aside id="drawer">
+  <div class="ph">📊 Fleet Analyst <span class="sub" id="engine">BigQuery data agent</span>
+    <button class="btn" style="margin-left:auto;padding:3px 9px" onclick="drawer(false)">✕</button></div>
+  <div class="body">
+    <div class="q" id="aq">Ask a question about 90 days of fleet data</div>
+    <canvas id="chart" height="190"></canvas>
+    <div class="ans" id="aa"></div>
+    <pre id="asql"></pre>
+  </div>
+  <div class="chipsq">
+    <span class="qchip">Which truck made the least profit this month?</span>
+    <span class="qchip">Which trucks have bad diesel mileage?</span>
+    <span class="qchip">Empty kilometres by truck</span>
+    <span class="qchip">Weekly profit trend</span>
+    <span class="qchip">Where do we waste most time in detention?</span>
+  </div>
+</aside>
+<div id="toasts"></div>
+<div id="caption"><small id="capk">SAARTHI AI</small><span id="capt"></span></div>
+<div id="titlecard"><div class="in"><div class="big"><i><b></b><b></b></i></div><h2 id="tct">Saarthi AI</h2><p id="tcs">The agentic co-pilot for India's truck fleets</p></div></div>
+
+<script>
+const PB = [
+  ["dispatch","📦","New order dispatch","Pick truck, predict route, assign","#38bdf8"],
+  ["breakdown","🛠","Sudden breakdown","Mechanic + relief truck + customer","#f97316"],
+  ["empty_return","🔁","Empty truck","Find return load, avoid empty km","#22c55e"],
+  ["delivery_refused","🚫","Delivery refused","Coordinate shipper, consignee, driver","#ec4899"],
+  ["cancel_after_dispatch","✖","Cancelled after dispatch","Exposure + alternative freight","#f43f5e"],
+  ["detention","⏱","Waiting 8 h at warehouse","Detention clock + escalation","#fb7185"],
+  ["docs_expiring","📄","Documents expiring","Renew and verify","#eab308"],
+  ["fatigue","😴","Tired driver","Saarthi Dash rest stop","#06b6d4"],
+  ["fastag_audit","🧾","FASTag check","double toll vs NHAI plazas","#c084fc"],
+  ["sentinel","🛡","CEO Sentinel","is every truck OK?","#f5c451"],
+];
+const $=s=>document.querySelector(s);
+const fmt=n=>"₹"+Math.round(n||0).toLocaleString("en-IN");
+let S=null, markers={}, routeLine=null, chart=null, running=new Set();
+
+// ---------- map
+const map=L.map("map",{zoomControl:false,attributionControl:false}).setView([24.2,74.6],6);
+L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}",{maxZoom:16}).addTo(map);
+L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Reference/MapServer/tile/{z}/{y}/{x}",{maxZoom:16,opacity:.85}).addTo(map);
+L.control.zoom({position:"topright"}).addTo(map);
+const COLORS={on_the_way:"#22d3ee",loading:"#fbbf24",waiting:"#fbbf24",idle:"#94a3b8",empty:"#94a3b8",breakdown:"#f43f5e",repair:"#fb923c"};
+function pin(t,focus){const c=COLORS[t.status]||"#94a3b8";
+  return L.divIcon({className:"",html:`<div class="truckpin ${focus?"focus":""}" style="background:${c}">🚚</div>`,iconSize:[26,26],iconAnchor:[13,13]})}
+function drawTrucks(){ if(!S) return;
+  for(const t of S.trucks){ const o=S.orders.find(x=>x.id===t.order);
+    const html=`<b>${t.id}</b> · ${t.driver}<br>${t.status.replace(/_/g," ")}${o?`<br>${o.from} → ${o.to} · ${o.cargo}<br>ETA ${o.eta_h} h`:""}<br>Fuel ${t.fuel}% · Health ${t.health}% · Driven ${t.drive_hours} h`;
+    if(!markers[t.id]){markers[t.id]=L.marker([t.lat,t.lng],{icon:pin(t)}).addTo(map).bindPopup(html); markers[t.id]._st=t.status}
+    else{markers[t.id].setLatLng([t.lat,t.lng]).setPopupContent(html); if(markers[t.id]._st!==t.status){markers[t.id].setIcon(pin(t));markers[t.id]._st=t.status}}
+  }}
+function focusTruck(id){const m=markers[id]; if(!m||!S) return; const t=S.trucks.find(x=>x.id===id); if(!t) return;
+  m.setIcon(pin(t,true)); map.flyTo(m.getLatLng(),Math.max(map.getZoom(),7),{duration:.8}); setTimeout(()=>m.setIcon(pin(t)),3200)}
+function showRoute(coords){ if(!coords) return; if(routeLine) map.removeLayer(routeLine);
+  routeLine=L.polyline(coords,{color:"#a78bfa",weight:4,opacity:.9,dashArray:"8 6"}).addTo(map); map.flyToBounds(routeLine.getBounds(),{padding:[40,40],duration:.9})}
+
+let tollLayer=null;
+function showTolls(t){ if(tollLayer){map.removeLayer(tollLayer);tollLayer=null} if(!t||!t.plazas||!t.plazas.length) return;
+  tollLayer=L.layerGroup(t.plazas.map(p=>L.circleMarker([p.lat,p.lng],{radius:5,color:"#c084fc",fillColor:"#c084fc",fillOpacity:.9,weight:1})
+    .bindTooltip(`🧾 ${p.name} · NHAI ₹${p.fee_2019_20||"?"} (2019-20)`))).addTo(map) }
+// ---------- render
+function render(){ if(!S) return; const k=S.kpis;
+  $("#kRoad").textContent=k.on_road; $("#kFleet").textContent=`of ${k.fleet}`; $("#kLoad").textContent=k.loading;
+  $("#kEmpty").textContent=k.empty; $("#kRev").textContent=fmt(k.revenue_recovered); $("#kRes").textContent=k.incidents_resolved;
+  $("#kKm").textContent=k.empty_km_avoided?`${k.empty_km_avoided} empty km avoided`:""; $("#kDet").textContent=fmt(k.detention_billed);
+  $("#orders").innerHTML=S.orders.slice().reverse().map(o=>`<tr><td class="mono">${o.id}</td><td>${o.from} → ${o.to}</td><td>${o.cargo}</td>
+    <td class="mono">${o.truck}</td><td><span class="st ${o.status}">${o.status.replace(/_/g," ")}</span></td>
+    <td><div class="prog"><i style="width:${Math.round(o.progress*100)}%"></i></div></td><td>${o.status==="cancelled"?"–":o.eta_h+" h"}</td><td>${fmt(o.freight)}</td></tr>`).join("");
+  const today=new Date(); const rows=[];
+  for(const t of S.trucks) for(const [d,v] of Object.entries(t.docs)){const left=Math.round((new Date(v)-today)/864e5); if(left<=30) rows.push([t.id,d,v,left])}
+  rows.sort((a,b)=>a[3]-b[3]);
+  $("#docs").innerHTML=rows.map(r=>`<tr><td class="mono">${r[0]}</td><td>${r[1]}</td><td>${r[2]}</td><td class="days ${r[3]<=7?"bad":r[3]<=15?"mid":"ok"}">${r[3]}</td></tr>`).join("")||`<tr><td colspan=4 style="color:#86efac">All documents valid ✓</td></tr>`;
+  drawTrucks();
+}
+function chaos(){ $("#chaos").innerHTML=PB.map(p=>`<button class="pb ${running.has(p[0])?"run":""}" data-pb="${p[0]}">
+  <span class="ic" style="background:${p[4]}22;color:${p[4]}">${p[1]}</span><span><b>${p[2]}</b><small>${p[3]}</small></span></button>`).join("");
+  document.querySelectorAll(".pb").forEach(b=>b.onclick=()=>runPB(b.dataset.pb)) }
+function addEvent(e){ const f=$("#feed"); const d=document.createElement("div"); d.className="ev "+e.kind;
+  const imp=e.kind==="resolved"&&e.data&&e.data.impact_rs?`<span class="impact">+${fmt(e.data.impact_rs)}</span>`:"";
+  const tag=e.truck?`<span class="tag mono">${e.truck}</span>`:"";
+  const ai=e.kind==="resolved"&&e.data&&e.data.ai?`<span class="tag">Gemini</span>`:"";
+  d.innerHTML=`<div class="bar" style="background:${e.color}"></div><div style="flex:1;min-width:0"><div class="who" style="color:${e.color}">${e.agent_name}<time>${e.ts}</time>${tag}${ai}${imp}</div><div class="tx"></div></div>`;
+  d.querySelector(".tx").textContent=e.text; f.appendChild(d); while(f.children.length>140) f.firstChild.remove(); f.scrollTop=f.scrollHeight;
+  if(e.truck&&(e.kind==="alert")) focusTruck(e.truck);
+  if(e.data&&e.data.route) showRoute(e.data.route);
+  if(e.kind==="resolved"){toast(e); running.delete(e.data.playbook); chaos()}
+}
+function toast(e){const t=document.createElement("div"); t.className="toast";
+  t.innerHTML=`<h4><span>✅ ${e.data.title}</span><span class="rs">${e.data.impact_rs?"+"+fmt(e.data.impact_rs):""}</span></h4><p></p>`;
+  t.querySelector("p").textContent=e.text; $("#toasts").appendChild(t); setTimeout(()=>t.remove(),7000)}
+function drawer(open){$("#drawer").classList.toggle("open",open)}
+function showAnalyst(r){ drawer(true); $("#aq").textContent="“"+r.question+"”"; $("#aa").textContent=r.answer; $("#asql").textContent=r.sql;
+  $("#engine").textContent=r.engine+" · "+r.via;
+  const labels=r.rows.slice(0,12).map(x=>String(x[0])), vals=r.rows.slice(0,12).map(x=>Number(x[1])||0);
+  if(chart) chart.destroy();
+  chart=new Chart($("#chart"),{type:r.chart==="line"?"line":"bar",data:{labels,datasets:[{data:vals,label:r.columns[1]||"",borderRadius:6,
+    backgroundColor:vals.map(v=>v<0?"#f43f5e":"#2dd4bf"),borderColor:"#60a5fa",tension:.35,fill:false}]},
+    options:{plugins:{legend:{display:false}},scales:{x:{ticks:{color:"#8a9bb8",font:{size:10}},grid:{color:"#15203a"}},
+    y:{ticks:{color:"#8a9bb8",font:{size:10}},grid:{color:"#15203a"}}},animation:{duration:700}}})}
+
+// ---------- actions
+async function api(p,b){const r=await fetch(p,b?{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(b)}:{}); return r.json()}
+async function runPB(name,target){running.add(name); chaos(); const r=await api("/api/playbook",{name,target}); if(!r.ok){running.delete(name);chaos()}}
+async function send(text){ if(!text) return; $("#cmd").value=""; await api("/api/chat",{text,role:"owner"}) }
+async function ask(q){ drawer(true); $("#aq").textContent="“"+q+"” · thinking…"; await api("/api/analyst",{question:q}) }
+async function resetAll(){ await api("/api/reset",{}); $("#feed").innerHTML=""; for(const id in markers){map.removeLayer(markers[id])} markers={};
+  if(routeLine){map.removeLayer(routeLine);routeLine=null} drawer(false); running.clear(); chaos(); await load() }
+$("#cmd").addEventListener("keydown",e=>{if(e.key==="Enter") send(e.target.value.trim())});
+document.querySelectorAll(".qchip").forEach(c=>c.onclick=()=>ask(c.textContent));
+
+// voice (Web Speech API)
+const SR=window.SpeechRecognition||window.webkitSpeechRecognition; let rec=null;
+$("#mic").onclick=()=>{ if(!SR){alert("Voice input needs Chrome or Edge.");return}
+  if(rec){rec.stop();return} rec=new SR(); rec.lang="hi-IN"; rec.interimResults=true; $("#mic").classList.add("on");
+  rec.onresult=e=>{const t=[...e.results].map(r=>r[0].transcript).join(""); $("#cmd").value=t; if(e.results[e.results.length-1].isFinal) send(t)};
+  rec.onend=()=>{$("#mic").classList.remove("on"); rec=null}; rec.start() };
+
+// ---------- live stream
+async function load(){ S=await api("/api/state"); render(); chaos();
+  const g=S.gemini; $("#cGem").classList.toggle("on",g.ready); $("#cGem span:last-child").textContent=g.ready?`Gemini · ${g.fast}`:"Gemini · offline mode";
+  $("#cBq").classList.add("on"); $("#cBq span:last-child").textContent="Fleet Analyst · "+S.analyst_engine;
+  if(!$("#feed").children.length) S.events.forEach(addEvent) }
+function stream(){ const es=new EventSource("/api/events");
+  es.onmessage=m=>{const d=JSON.parse(m.data);
+    if(d.type==="state"){S={...S,...d}; render()}
+    else if(d.type==="event") addEvent(d)
+    else if(d.type==="analyst") showAnalyst(d)
+    else if(d.type==="route"){ showRoute(d.route.coords); showTolls(d.route.tolls) } };
+  es.onerror=()=>{es.close(); setTimeout(stream,2000)} }
+setInterval(()=>$("#clock").textContent=new Date().toLocaleTimeString("en-IN",{hour12:false}),1000);
+load().then(stream);
+
+// ---------- scripted demo (for the 3-minute video)
+const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+function cap(k,t){ $("#capk").textContent=k; $("#capt").textContent=t; $("#caption").style.display=t?"block":"none" }
+function title(t,s,show){ $("#tct").textContent=t; $("#tcs").textContent=s; $("#titlecard").style.display=show?"grid":"none" }
+window.DEMO_SCRIPT=[
+  [0,"title","Saarthi AI","The agentic co-pilot for India's truck fleets"],
+  [4500,"cap","THE PROBLEM","Small fleet owners run on phone calls. Breakdowns, empty trucks, refusals and waiting eat their profit."],
+  [10500,"cap","FLEET AGENT · COMMAND CENTER","Ten Gemini-powered agents watch every truck, order and document - live."],
+  [17000,"pb","dispatch"],[17000,"cap","1 · DISPATCH + PREDICTION","Dispatch Agent picks the best truck; Route Oracle predicts route, live weather, traffic, ETA and cost."],
+  [36000,"pb","breakdown"],[36000,"cap","2 · SUDDEN BREAKDOWN","Coolant leak on the highway. Recovery Agent diagnoses, sends a mechanic and moves cargo to an empty truck."],
+  [55000,"pb","empty_return"],[55000,"cap","3 · EMPTY TRUCK","Freight Matcher finds a paying load home - no more empty kilometres."],
+  [71000,"pb","delivery_refused"],[71000,"cap","4 · DELIVERY REFUSED","Customer Desk calls consignee and shipper, compares options and picks the cheapest fix."],
+  [86000,"pb","cancel_after_dispatch"],[86000,"cap","5 · CANCELLED AFTER DISPATCH","Exposure calculated, cancellation fee billed, alternative freight found."],
+  [101000,"pb","detention"],[101000,"cap","6 · STUCK 8 HOURS AT A WAREHOUSE","Detention Agent tracks the clock, calls the dock, escalates and bills the wait."],
+  [116000,"pb","docs_expiring"],[116000,"cap","7 · DOCUMENTS EXPIRING","Compliance Agent renews insurance, PUC and fitness before a challan."],
+  [128000,"pb","fatigue"],[128000,"cap","8 · TIRED DRIVER","Saarthi Dash, the dashboard robot, stops a tired driver for chai and rest - in Hindi."],
+  [139000,"pb","fastag_audit"],[139000,"cap","9 · FASTAG AUDITOR","Every toll is matched to real NHAI plazas on the road route. A double charge is caught and disputed."],
+  [152000,"end"]];
+async function runDemo(){ await api("/api/reset",{}); $("#feed").innerHTML=""; drawer(false); await api("/api/pace",{pace:0.65}); await load();
+  const t0=performance.now(); window.DEMO_WALL0=Date.now();
+  for(const step of window.DEMO_SCRIPT){ const wait=step[0]-(performance.now()-t0); if(wait>0) await sleep(wait);
+    const [_,kind,a,b]=step;
+    if(kind==="title"){ title(a,b,true); cap("",""); setTimeout(()=>title("","",false),4200) }
+    else if(kind==="cap") cap(a,b);
+    else if(kind==="pb"){ drawer(false); runPB(a) }
+    else if(kind==="ask") ask(a);
+    else if(kind==="end"){ cap("",""); title("","",false); window.DEMO_DONE=true } }
+}
+if(new URLSearchParams(location.search).get("demo")==="1") setTimeout(runDemo,1500);
+</script>
+</body>
+</html>

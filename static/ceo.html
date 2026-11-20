@@ -1,0 +1,181 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Saarthi AI · CEO Agent</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<style>
+:root{--bg:#070d1a;--panel:#0e1729;--panel2:#121d33;--line:#1d2a44;--line2:#26365a;--text:#e6edf7;--muted:#8a9bb8;--dim:#5d6f8f;
+  --gold:#f5c451;--gold2:#fbbf24;--teal:#14b8a6;--teal2:#2dd4bf;--green:#22c55e;--red:#f43f5e}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{background:radial-gradient(1000px 520px at 15% -10%,#2a2410 0,transparent 55%),radial-gradient(900px 500px at 90% 0,#0f2a3a 0,transparent 60%),var(--bg);
+  color:var(--text);font:13px/1.5 Inter,system-ui,sans-serif}
+header{height:58px;display:flex;align-items:center;gap:14px;padding:0 20px;border-bottom:1px solid var(--line);background:rgba(7,13,26,.8);backdrop-filter:blur(8px)}
+.orb{width:32px;height:32px;border-radius:10px;background:linear-gradient(135deg,#b45309,#f59e0b);display:grid;place-items:center;box-shadow:0 0 18px rgba(245,158,11,.45)}
+.orb i{width:16px;height:8px;display:flex;justify-content:space-between}.orb b{width:5px;height:8px;border-radius:3px;background:#fffbeb}
+h1{font-size:16px;font-weight:800;white-space:nowrap}h1 small{display:block;font-size:11px;color:var(--muted);font-weight:500}
+.spacer{flex:1}
+.chip{display:flex;align-items:center;gap:6px;padding:4px 10px;border:1px solid var(--line2);border-radius:999px;color:var(--muted);font-size:11px;background:var(--panel);white-space:nowrap}
+.chip .dot{width:7px;height:7px;border-radius:50%;background:var(--dim)}.chip.on .dot{background:var(--green);box-shadow:0 0 8px var(--green)}
+.btn{border:1px solid var(--line2);background:var(--panel2);color:var(--text);padding:7px 12px;border-radius:9px;font:600 12px Inter;cursor:pointer;text-decoration:none;white-space:nowrap}
+.btn:hover{border-color:var(--gold);color:var(--gold)}
+.btn.gold{background:linear-gradient(135deg,#b45309,#d97706);border-color:transparent;color:#fff}
+.wrap{display:grid;grid-template-columns:1.15fr 1fr;gap:14px;padding:14px 20px;height:calc(100vh - 58px)}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:16px;display:flex;flex-direction:column;overflow:hidden}
+.ph{display:flex;align-items:center;gap:8px;padding:11px 14px;border-bottom:1px solid var(--line);font-weight:700;font-size:12.5px}
+.ph .sub{color:var(--dim);font-weight:500;font-size:11px}
+/* conversation */
+.brief{margin:14px;padding:16px 18px;border-radius:14px;background:linear-gradient(135deg,rgba(245,158,11,.14),rgba(20,184,166,.08));border:1px solid #4a3b12}
+.brief .k{font-size:10.5px;letter-spacing:2px;color:var(--gold);font-weight:800}
+.brief p{font-size:15px;font-weight:500;margin-top:6px;color:#fef9e7;min-height:44px}
+#convo{flex:1;overflow-y:auto;padding:4px 16px 12px}
+.msg{max-width:86%;padding:10px 14px;border-radius:14px;margin:8px 0;font-size:13.5px;animation:in .3s ease}
+@keyframes in{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+.msg.me{margin-left:auto;background:#1b3a4a;border:1px solid #1f5a68;color:#e0f7fa;border-bottom-right-radius:4px}
+.msg.ai{background:var(--panel2);border:1px solid var(--line2);border-bottom-left-radius:4px}
+.msg.ai .tools{margin-top:6px;display:flex;gap:5px;flex-wrap:wrap}
+.msg.ai .tools span{font-size:10px;padding:2px 7px;border-radius:6px;background:#2a2410;color:var(--gold);font-weight:600}
+.msg.think{color:var(--muted);font-style:italic;background:transparent;border:0}
+.prompts{display:flex;gap:6px;flex-wrap:wrap;padding:0 14px 10px}
+.prompts span{font:500 11.5px Inter;padding:6px 10px;border-radius:999px;border:1px solid var(--line2);background:var(--panel2);color:var(--muted);cursor:pointer}
+.prompts span:hover{color:var(--gold);border-color:var(--gold)}
+.ask{display:flex;gap:10px;align-items:center;margin:0 14px 14px;padding:8px 8px 8px 14px;border-radius:14px;border:1px solid var(--line2);background:#0a1324}
+.ask:focus-within{border-color:var(--gold)}
+.ask input{flex:1;background:transparent;border:0;outline:0;color:var(--text);font:500 14px Inter}
+.mic{width:46px;height:46px;border-radius:50%;border:0;cursor:pointer;background:linear-gradient(135deg,#b45309,#f59e0b);color:#fff;font-size:19px;box-shadow:0 0 20px rgba(245,158,11,.4)}
+.mic.on{background:var(--red);animation:pulse 1.2s infinite}
+@keyframes pulse{0%{box-shadow:0 0 0 0 rgba(244,63,94,.6)}100%{box-shadow:0 0 0 12px rgba(244,63,94,0)}}
+/* right */
+.right{display:flex;flex-direction:column;gap:14px;overflow-y:auto}
+.kpis{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+.kpi{background:linear-gradient(180deg,var(--panel2),var(--panel));border:1px solid var(--line);border-radius:12px;padding:10px 12px}
+.kpi label{color:var(--muted);font-size:11px;display:block}.kpi b{font-size:19px;font-weight:800}
+.kpi.g b{color:var(--green)}.kpi.y b{color:var(--gold)}.kpi.t b{color:var(--teal2)}
+.prop{display:flex;gap:10px;align-items:flex-start;padding:11px 14px;border-bottom:1px solid var(--line)}
+.prop:last-child{border-bottom:0}
+.prop .ic{width:30px;height:30px;border-radius:9px;background:#2a2410;display:grid;place-items:center;flex:none}
+.prop b{display:block;font-size:12.5px}.prop p{color:var(--muted);font-size:11.5px}.prop em{font-style:normal;color:var(--green);font-size:11px;font-weight:600}
+.prop .btn{margin-left:auto;flex:none}
+.prop.done .btn{background:#0f3a24;border-color:#166534;color:#86efac;pointer-events:none}
+#chartBox{padding:10px 14px}
+#atitle{font-size:12px;color:#fcd34d;font-weight:600;margin-bottom:6px}
+#did{max-height:180px;overflow-y:auto;padding:6px 12px 10px}
+.d{font-size:12px;padding:6px 8px;border-radius:9px;background:var(--panel2);margin-bottom:5px;display:flex;gap:8px}
+.d b{color:var(--green);margin-left:auto;white-space:nowrap}
+#sent{max-height:150px;overflow-y:auto;padding:6px 12px 10px;display:grid;grid-template-columns:1fr 1fr;gap:5px}
+.s{font-size:11.5px;padding:5px 8px;border-radius:8px;background:var(--panel2);border-left:3px solid var(--green)}
+.s.bad{border-left-color:var(--gold)}.s b{display:block;font-size:11px}.s span{color:var(--muted);font-size:10.5px}
+.d.relay{background:#2a2410}
+#caption{position:fixed;left:50%;bottom:26px;transform:translateX(-50%);z-index:1400;max-width:880px;text-align:center;background:rgba(4,8,18,.9);
+  border:1px solid #4a3b12;border-radius:14px;padding:12px 22px;font-size:18px;font-weight:600;display:none}
+#caption small{display:block;color:var(--gold);font-size:11px;letter-spacing:1.5px;font-weight:700;margin-bottom:3px}
+#titlecard{position:fixed;inset:0;z-index:2000;display:none;place-items:center;background:radial-gradient(800px 500px at 50% 40%,#3a2c0c,#050a14)}
+#titlecard h2{font-size:52px;font-weight:800;letter-spacing:-1px;text-align:center}#titlecard p{color:var(--muted);font-size:18px;text-align:center;margin-top:8px}
+@media (max-width:1000px){.wrap{grid-template-columns:1fr;height:auto}.panel{min-height:480px}}
+</style>
+</head>
+<body>
+<header>
+  <div class="orb"><i><b></b><b></b></i></div>
+  <h1>Saarthi CEO Agent<small>Your AI business partner · voice-first</small></h1>
+  <span class="chip" id="cGem"><span class="dot"></span><span>Gemini</span></span>
+  <span class="chip on"><span class="dot"></span>Fleet Analyst · BigQuery schema</span>
+  <div class="spacer"></div>
+  <a class="btn" href="/fleet" target="_blank">🛰 Fleet Agent</a>
+  <a class="btn" href="/dash" target="_blank">🤖 Saarthi Dash</a>
+  <button class="btn gold" onclick="brief()">☀ Morning brief</button>
+</header>
+<div class="wrap">
+  <section class="panel">
+    <div class="brief"><div class="k">MORNING BRIEF</div><p id="brief">Preparing your brief…</p></div>
+    <div id="convo"></div>
+    <div class="prompts">
+      <span>Aaj ka business brief do</span>
+      <span>Is mahine sabse zyada nuksaan kaunsa truck kar raha hai?</span>
+      <span>Kis truck ki diesel mileage kharab hai?</span>
+      <span>Chittorgarh se Mumbai ka route, mausam aur kharcha batao</span>
+      <span>Khaali truck ke liye wapsi ka load dhundo</span>
+      <span>Kaunse documents expire hone wale hain?</span>
+    </div>
+    <div class="ask"><input id="q" placeholder="Talk to your CEO Agent… Hindi, Hinglish or English" autocomplete="off"><button class="mic" id="mic">🎙</button></div>
+  </section>
+  <section class="right">
+    <div class="kpis">
+      <div class="kpi g"><label>Profit · last 30 days</label><b id="kP">–</b></div>
+      <div class="kpi y"><label>Revenue · last 30 days</label><b id="kR">–</b></div>
+      <div class="kpi t"><label>Recovered today by agents</label><b id="kT">–</b></div>
+    </div>
+    <div class="panel"><div class="ph">🧭 Decisions for you <span class="sub">your agents propose, you approve</span></div><div id="props"></div></div>
+    <div class="panel"><div class="ph">📊 Fleet Analyst <span class="sub" id="aeng">BigQuery data agent</span></div>
+      <div id="chartBox"><div id="atitle">Ask a money question to see the data</div><canvas id="chart" height="160"></canvas></div></div>
+    <div class="panel"><div class="ph">🛡 CEO Sentinel <span class="sub" id="sentSub">every truck, 7 checks</span>
+      <button class="btn" style="margin-left:auto;padding:4px 9px" onclick="sentinel(true)">Run round</button></div><div id="sent"></div></div>
+    <div class="panel"><div class="ph">✅ What your agents did <span class="sub">live · incl. driver messages</span></div><div id="did"></div></div>
+  </section>
+</div>
+<div id="caption"><small id="capk"></small><span id="capt"></span></div>
+<div id="titlecard"><div><h2 id="tct"></h2><p id="tcs"></p></div></div>
+<script>
+const $=s=>document.querySelector(s); const fmt=n=>"₹"+Math.round(n||0).toLocaleString("en-IN"); let chart=null, voice=true;
+async function api(p,b){const r=await fetch(p,b?{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(b)}:{}); return r.json()}
+function say(t){ if(!voice||!window.speechSynthesis) return; speechSynthesis.cancel(); const u=new SpeechSynthesisUtterance(t);
+  const v=speechSynthesis.getVoices().find(v=>/en[-_]IN/i.test(v.lang))||speechSynthesis.getVoices().find(v=>/hi[-_]IN/i.test(v.lang)); if(v) u.voice=v; speechSynthesis.speak(u)}
+function bubble(cls,text,tools){const d=document.createElement("div"); d.className="msg "+cls; d.textContent=text;
+  if(tools&&tools.length){const t=document.createElement("div"); t.className="tools"; t.innerHTML=tools.map(x=>`<span>⚙ ${x.tool}${x.args&&x.args.name?": "+x.args.name:""}</span>`).join(""); d.appendChild(t)}
+  $("#convo").appendChild(d); $("#convo").scrollTop=1e9; return d}
+async function ask(text){ if(!text) return; $("#q").value=""; bubble("me",text); const th=bubble("think","CEO Agent is thinking with your data…");
+  const r=await api("/api/chat",{text,role:"ceo"}); th.remove(); bubble("ai",r.reply,r.tools); say(r.reply) }
+async function brief(){ $("#brief").textContent="Preparing your brief…"; const b=await api("/api/ceo/brief");
+  $("#brief").textContent=b.brief; $("#kP").textContent=fmt(b.profit_30d); $("#kR").textContent=fmt(b.revenue_30d); $("#kT").textContent=fmt(b.kpis.revenue_recovered);
+  $("#props").innerHTML=b.proposals.map((p,i)=>`<div class="prop" id="p${i}"><div class="ic">${p.id==="service"?"⛽":p.id==="empty"?"🔁":"📄"}</div>
+    <div><b>${p.title}</b><p>${p.detail}</p><em>${p.impact}</em></div><button class="btn gold" data-i="${i}">Approve</button></div>`).join("")||"<div class='prop'>No decisions pending ✓</div>";
+  document.querySelectorAll("#props .btn").forEach(btn=>btn.onclick=async()=>{const p=b.proposals[btn.dataset.i]; btn.textContent="Approved ✓";
+    btn.closest(".prop").classList.add("done"); const r=await api("/api/ceo/approve",{id:p.id,truck:p.truck}); bubble("ai","Done. "+(r.msg||"Agents started.")+" I'll report back with the result.")});
+  say(b.brief); sentinel(false); return b }
+async function sentinel(run){ if(run) await api("/api/playbook",{name:"sentinel"}); const s=await api("/api/ceo/sentinel");
+  $("#sentSub").textContent=`${s.ok}/${s.total} trucks all-clear · 7 checks each`;
+  $("#sent").innerHTML=s.rows.map(r=>`<div class="s ${r.ok?"":"bad"}"><b>${r.ok?"✓":"⚠"} ${r.truck}</b><span>${r.ok?"all clear":r.issues.join(" · ")}</span></div>`).join("") }
+function showAnalyst(r){ $("#atitle").textContent=r.title+" — "+r.answer; $("#aeng").textContent=r.engine+" · "+r.via;
+  const labels=r.rows.slice(0,12).map(x=>String(x[0])), vals=r.rows.slice(0,12).map(x=>Number(x[1])||0); if(chart) chart.destroy();
+  chart=new Chart($("#chart"),{type:r.chart==="line"?"line":"bar",data:{labels,datasets:[{data:vals,borderRadius:6,backgroundColor:vals.map(v=>v<0?"#f43f5e":"#f5c451"),borderColor:"#f5c451",tension:.35}]},
+    options:{plugins:{legend:{display:false}},scales:{x:{ticks:{color:"#8a9bb8",font:{size:10}},grid:{color:"#15203a"}},y:{ticks:{color:"#8a9bb8",font:{size:10}},grid:{color:"#15203a"}}}}})}
+$("#q").addEventListener("keydown",e=>{if(e.key==="Enter") ask(e.target.value.trim())});
+document.querySelectorAll(".prompts span").forEach(s=>s.onclick=()=>ask(s.textContent));
+const SR=window.SpeechRecognition||window.webkitSpeechRecognition; let rec=null;
+$("#mic").onclick=()=>{ if(!SR){alert("Voice input needs Chrome or Edge.");return} if(rec){rec.stop();return}
+  rec=new SR(); rec.lang="hi-IN"; rec.interimResults=true; $("#mic").classList.add("on");
+  rec.onresult=e=>{const t=[...e.results].map(r=>r[0].transcript).join(""); $("#q").value=t; if(e.results[e.results.length-1].isFinal) ask(t)};
+  rec.onend=()=>{$("#mic").classList.remove("on"); rec=null}; rec.start() };
+const es=new EventSource("/api/events");
+es.onmessage=m=>{const d=JSON.parse(m.data);
+  if(d.type==="analyst") showAnalyst(d);
+  if(d.type==="state"&&d.kpis) $("#kT").textContent=fmt(d.kpis.revenue_recovered);
+  if(d.type==="event"&&d.kind==="relay"){const x=document.createElement("div"); x.className="d relay"; x.textContent=d.text; $("#did").prepend(x)}
+  if(d.type==="event"&&d.kind==="resolved"&&d.data.playbook==="sentinel") sentinel(false);
+  if(d.type==="event"&&d.kind==="resolved"){const x=document.createElement("div"); x.className="d";
+    x.innerHTML=`<span></span>${d.data.impact_rs?`<b>+${fmt(d.data.impact_rs)}</b>`:""}`; x.querySelector("span").textContent=d.text; $("#did").prepend(x)} };
+api("/api/state").then(s=>{const g=s.gemini; $("#cGem").classList.toggle("on",g.ready); $("#cGem span:last-child").textContent=g.ready?"Gemini · "+g.fast:"Gemini · offline"});
+window.speechSynthesis&&speechSynthesis.getVoices();
+// ---- scripted CEO demo (video)
+const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+function cap(k,t){$("#capk").textContent=k;$("#capt").textContent=t;$("#caption").style.display=t?"block":"none"}
+function title(t,s,show){$("#tct").textContent=t;$("#tcs").textContent=s;$("#titlecard").style.display=show?"grid":"none"}
+async function typeAsk(text){ $("#mic").classList.add("on"); for(let i=1;i<=text.length;i++){$("#q").value=text.slice(0,i); await sleep(28)} $("#mic").classList.remove("on"); await ask(text) }
+window.CEO_SCRIPT=[[0,"title","CEO Agent","The owner's AI business partner"],[3500,"brief"],[3500,"cap","10 · CEO AGENT · MORNING BRIEF","Every morning the CEO Agent briefs the owner: profit, live fleet and the one thing to do."],
+  [14000,"ask","Is mahine sabse zyada nuksaan kaunsa truck kar raha hai?"],[14000,"cap","VOICE-FIRST DATA AGENT","The owner asks in Hindi. The CEO Agent queries 90 days of trips and answers with numbers and a chart."],
+  [30000,"approve"],[30000,"cap","AGENTS PROPOSE · OWNER APPROVES","One tap approves the fix. The Recovery Agent books it and Saarthi Dash tells the driver."],
+  [39000,"ask","RJ09GA4508 ke driver ko bolo ki Delhi pahunch ke turant call kare"],[39000,"cap","OWNER ↔ DRIVER, NO PHONE CALLS","The CEO Agent relays the owner's message; Saarthi Dash speaks it to the driver. The Sentinel keeps checking every truck."],
+  [49000,"cap","BUILT ON GOOGLE","Gemini · Vertex AI · BigQuery · Cloud Run · Antigravity · AI Studio"],[55000,"title","Saarthi AI","Every truck connected. Every crisis handled."],[61000,"end"]];
+async function runDemo(){ voice=false; await api("/api/pace",{pace:0.65}); const t0=performance.now(); window.DEMO_WALL0=Date.now();
+  for(const s of window.CEO_SCRIPT){const w=s[0]-(performance.now()-t0); if(w>0) await sleep(w); const [_,k,a,b]=s;
+    if(k==="title"){title(a,b,true);cap("","");setTimeout(()=>title("","",false),3300)} else if(k==="cap") cap(a,b);
+    else if(k==="brief") brief(); else if(k==="ask") typeAsk(a);
+    else if(k==="approve"){const btn=document.querySelector("#props .btn"); if(btn) btn.click()}
+    else if(k==="end"){cap("","");title("","",false);window.DEMO_DONE=true}}}
+if(new URLSearchParams(location.search).get("demo")==="1") setTimeout(runDemo,1500); else brief();
+</script>
+</body>
+</html>

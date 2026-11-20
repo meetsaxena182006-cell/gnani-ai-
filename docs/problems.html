@@ -1,0 +1,143 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Saarthi AI - The Problem in Numbers</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+@page{size:A4;margin:0}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font:10.5pt/1.5 Inter,sans-serif;color:#0f172a;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+.page{width:210mm;height:297mm;padding:16mm 16mm 14mm;position:relative;page-break-after:always;overflow:hidden}
+.page:last-child{page-break-after:auto}
+.foot{position:absolute;left:16mm;right:16mm;bottom:9mm;display:flex;justify-content:space-between;font-size:8pt;color:#64748b;border-top:1px solid #e2e8f0;padding-top:4px}
+h2{font-size:20pt;font-weight:800;letter-spacing:-.4px;margin-bottom:4px}
+h3{font-size:12pt;font-weight:700;margin:14px 0 6px}
+.kicker{font-size:8.5pt;font-weight:700;letter-spacing:2px;color:#0d9488;text-transform:uppercase;margin-bottom:6px}
+.lead{color:#334155;font-size:11pt;margin-bottom:12px}
+/* cover */
+.cover{background:radial-gradient(700px 500px at 80% 0%,#134e4a,#06101f 70%);color:#f8fafc;padding:22mm 18mm}
+.cover .logo{display:flex;align-items:center;gap:12px;margin-bottom:34mm}
+.cover .orb{width:44px;height:44px;border-radius:14px;background:linear-gradient(135deg,#0d9488,#0e7490);display:grid;place-items:center;box-shadow:0 0 30px rgba(20,184,166,.6)}
+.cover .orb i{width:22px;height:10px;display:flex;justify-content:space-between}.cover .orb b{width:7px;height:10px;border-radius:3px;background:#ecfeff}
+.cover h1{font-size:34pt;line-height:1.08;font-weight:800;letter-spacing:-1px;max-width:150mm}
+.cover h1 span{color:#2dd4bf}
+.cover p.sub{font-size:13pt;color:#a5b4c8;margin-top:10px;max-width:150mm}
+.bigstats{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:22mm}
+.bs{background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.12);border-radius:14px;padding:14px 16px}
+.bs b{display:block;font-size:24pt;font-weight:800;color:#5eead4;letter-spacing:-.5px}
+.bs span{font-size:9.5pt;color:#cbd5e1}.bs em{display:block;font-style:normal;font-size:7.5pt;color:#7c8ba3;margin-top:4px}
+.cover .foot{color:#7c8ba3;border-color:rgba(255,255,255,.12)}
+/* cards */
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+.card{border:1px solid #e2e8f0;border-radius:12px;padding:12px 13px;background:#f8fafc}
+.card b.n{font-size:20pt;font-weight:800;color:#0f766e;display:block;letter-spacing:-.4px;line-height:1.1}
+.card .l{font-size:9.5pt;color:#334155;margin-top:3px}
+.card .s{font-size:7.5pt;color:#64748b;margin-top:6px}
+.card.warn b.n{color:#c2410c}.card.red b.n{color:#be123c}
+table{width:100%;border-collapse:collapse;font-size:8.8pt;margin-top:6px}
+th{background:#0f172a;color:#f8fafc;text-align:left;padding:7px 8px;font-weight:600;font-size:8.5pt}
+td{padding:7px 8px;border-bottom:1px solid #e2e8f0;vertical-align:top}
+tr:nth-child(even) td{background:#f8fafc}
+td.p{font-weight:700;width:22%}td.d{width:36%;color:#334155}td.a{color:#0f766e}
+.sup{font-size:7pt;color:#0d9488;font-weight:700;vertical-align:super}
+.note{font-size:8pt;color:#64748b;background:#fff7ed;border:1px solid #fed7aa;border-radius:8px;padding:7px 9px;margin-top:10px}
+.flow{display:grid;grid-template-columns:repeat(5,1fr);gap:6px;margin-top:8px}
+.flow div{background:#ecfeff;border:1px solid #a5f3fc;border-radius:10px;padding:8px;font-size:8.5pt;text-align:center;font-weight:600;color:#155e75}
+.src li{font-size:8.3pt;margin:0 0 5px 16px;color:#334155;word-break:break-word}
+.src a{color:#0f766e;text-decoration:none}
+.tag{display:inline-block;font-size:7.5pt;font-weight:700;padding:1px 7px;border-radius:99px;background:#ccfbf1;color:#115e59;margin-right:4px}
+</style></head>
+<body>
+
+<section class="page cover">
+  <div class="logo"><div class="orb"><i><b></b><b></b></i></div><div><div style="font-weight:800;font-size:15pt">Saarthi AI</div>
+    <div style="font-size:9pt;color:#94a3b8">Agentic co-pilot for India's truck fleets · Google Startup Buildathon 2026</div></div></div>
+  <div class="kicker" style="color:#5eead4">The problem in numbers</div>
+  <h1>India moves on trucks. <span>Truck owners run on phone calls.</span></h1>
+  <p class="sub">The problems Saarthi AI solves, backed by Government of India, NITI Aayog, MoRTH and toll data.</p>
+  <div class="bigstats">
+    <div class="bs"><b>~70%</b><span>of India's domestic freight demand is moved by trucks</span><em>NITI Aayog &amp; RMI</em></div>
+    <div class="bs"><b>₹24.01 lakh cr</b><span>India's logistics cost in 2023-24 = 7.97% of GDP</span><em>NCAER study for DPIIT, Sept 2025</em></div>
+    <div class="bs"><b>₹61,408 cr</b><span>toll collected on National Highways in FY 2024-25</span><em>MoRTH (via Swarajya)</em></div>
+    <div class="bs"><b>1,72,890</b><span>people killed on Indian roads in 2023, the highest ever</span><em>MoRTH, Road Accidents in India 2023</em></div>
+  </div>
+  <div class="foot"><span>Saarthi AI · Meet Saxena &amp; Yogeshwar Singh Rathore</span><span>All figures sourced on page 5</span></div>
+</section>
+
+<section class="page">
+  <div class="kicker">1 · The scale</div>
+  <h2>A ₹24 lakh crore system held together by WhatsApp</h2>
+  <p class="lead">Road freight is the backbone of the Indian economy. But the people who run it, mostly small operators, still work without data, tools or support.</p>
+  <div class="grid3">
+    <div class="card"><b class="n">~70%</b><div class="l">share of domestic freight demand carried by trucks</div><div class="s">NITI Aayog &amp; RMI analysis<span class="sup">1</span></div></div>
+    <div class="card"><b class="n">7.97%</b><div class="l">logistics cost as a share of GDP in 2023-24 (₹24.01 lakh crore)</div><div class="s">NCAER for DPIIT, 2025<span class="sup">2</span></div></div>
+    <div class="card"><b class="n">~80%</b><div class="l">of trucking operators run fewer than 10 trucks</div><div class="s">ICCT, 2024<span class="sup">3</span></div></div>
+    <div class="card"><b class="n">10 mn+</b><div class="l">trucks operate in India, and they remain heavily under-utilised</div><div class="s">KPMG India, Jan 2026<span class="sup">4</span></div></div>
+    <div class="card"><b class="n">₹61,408 cr</b><div class="l">national-highway toll collected in FY 2024-25, up from ₹55,882 cr in FY24</div><div class="s">MoRTH data<span class="sup">5</span></div></div>
+    <div class="card"><b class="n">98%+</b><div class="l">of national-highway toll is now paid via FASTag, so the data exists but nobody uses it for the owner</div><div class="s">NETC / NHAI<span class="sup">6</span></div></div>
+  </div>
+  <h3>Why the small operator loses</h3>
+  <p>A fleet owner with 2 to 20 trucks personally coordinates every trip, driver call, diesel fill, toll, breakdown, document and payment. Profit is known only at month end, if ever. The government target is to cut logistics cost further by 2030 under the National Logistics Policy<span class="sup">2</span>. That can only happen if the small operator, who carries most of India's freight, becomes efficient.</p>
+  <div class="note">Logistics cost: the older "13-14% of GDP" figure came from external studies. The first official estimate (NCAER for DPIIT, 2025) is 7.97% for 2023-24. We use the official figure.</div>
+  <div class="foot"><span>Saarthi AI · The problem in numbers</span><span>2</span></div>
+</section>
+
+<section class="page">
+  <div class="kicker">2 · Where the money and lives leak</div>
+  <h2>Ten problems, with data, and what Saarthi does</h2>
+  <table>
+    <tr><th>Problem</th><th>Evidence</th><th>Saarthi AI agent response</th></tr>
+    <tr><td class="p">Empty return trips</td><td class="d">25-30% of truck trips are empty return legs<span class="sup">4</span>. Trucks are under-utilised, at about 250-300 km a day<span class="sup">4</span>.</td><td class="a"><b>Freight Matcher</b> ranks loads near the truck by net earning and distance home, then books one, so empty km become paid km.</td></tr>
+    <tr><td class="p">Sudden breakdowns</td><td class="d">Breakdowns happen far from home with no structured help. The owner finds mechanics by phone.</td><td class="a"><b>Recovery Agent</b> diagnoses the fault, calls the nearest mechanic, assigns a relief truck and resets the customer's ETA.</td></tr>
+    <tr><td class="p">Driver fatigue</td><td class="d">About 50% of truck drivers drive even when sleepy or fatigued, and drive nearly 12 hours a day<span class="sup">7</span>.</td><td class="a"><b>Saarthi Dash</b>, the dashboard robot, tracks hours driven, warns in Hindi, suggests rest stops and updates the ETA.</td></tr>
+    <tr><td class="p">Road deaths</td><td class="d">4,80,583 accidents and 1,72,890 deaths in 2023<span class="sup">8</span>. Trucks were the "crime vehicle" in 33,997 deaths<span class="sup">8</span>.</td><td class="a">Fatigue stops, speed and weather advisories, and route risk scoring from the <b>Route Oracle</b>.</td></tr>
+    <tr><td class="p">Driver shortage</td><td class="d">Only 75 drivers for every 100 trucks, a shortage of 22 lakh drivers (Union Minister, Jan 2025)<span class="sup">9</span>.</td><td class="a">A companion that makes the job safer and easier: voice-first, no typing, help at 2 a.m.</td></tr>
+    <tr><td class="p">Toll and diesel costs</td><td class="d">₹61,408 cr national-highway toll in FY25<span class="sup">5</span>. Diesel and toll are the largest trip costs.</td><td class="a"><b>Route Oracle</b> forecasts diesel, toll and driver cost for each trip and the best departure time.</td></tr>
+    <tr><td class="p">Detention at gates</td><td class="d">Trucks wait hours at factories and warehouses. Waiting time often goes unbilled because there is no proof.</td><td class="a"><b>Detention Agent</b> runs a geo-fenced clock, calls the dock, escalates with proof and bills detention.</td></tr>
+    <tr><td class="p">Delivery refused</td><td class="d">A refusal leaves the truck stuck and starts a chain of calls between shipper, consignee and driver.</td><td class="a"><b>Customer Desk</b> calls both sides, compares wait, return and storage options, and picks the cheapest.</td></tr>
+    <tr><td class="p">Cancelled after dispatch</td><td class="d">Diesel, toll and driver money is already spent when a shipper cancels.</td><td class="a">Calculates the exposure, invoices the cancellation fee and finds alternative freight from the truck's location.</td></tr>
+    <tr><td class="p">Expiring documents</td><td class="d">Insurance, PUC, fitness and permit lapses lead to fines and blocked trips.</td><td class="a"><b>Compliance Agent</b> scans daily, starts renewals, verifies new documents and blocks unsafe dispatch.</td></tr>
+  </table>
+  <div class="note">Rows without a superscript describe ground problems from operator conversations in Rajasthan. We found no official national dataset for them, and we do not invent numbers.</div>
+  <div class="foot"><span>Saarthi AI · The problem in numbers</span><span>3</span></div>
+</section>
+
+<section class="page">
+  <div class="kicker">3 · The solution</div>
+  <h2>One agentic ecosystem for every truck</h2>
+  <p class="lead">Saarthi AI connects owner, driver, shipper and consignee through ten AI agents that act, not just alert. When chaos happens, agents coordinate and resolve it in minutes, and the owner sees the rupee impact.</p>
+  <div class="flow"><div>Detect<br><small>GPS · FASTag · driver voice · docs</small></div><div>Predict<br><small>route · weather · traffic · ETA</small></div><div>Decide<br><small>Gemini reasoning over options</small></div><div>Act<br><small>calls · bookings · invoices</small></div><div>Learn<br><small>BigQuery analytics</small></div></div>
+  <h3>The agent team</h3>
+  <div class="grid2">
+    <div class="card"><b>Dispatch Agent</b><div class="l">Picks the best truck by distance, driver hours, health and documents, and assigns the order.</div></div>
+    <div class="card"><b>Route Oracle</b><div class="l">Gives road distance, live weather along the corridor, predicted traffic, ETA, best departure time and cost.</div></div>
+    <div class="card"><b>Recovery Agent</b><div class="l">Handles breakdowns: diagnosis, mechanic, relief truck and customer update.</div></div>
+    <div class="card"><b>Freight Matcher</b><div class="l">Fills empty returns and replaces cancelled loads from the load board.</div></div>
+    <div class="card"><b>Customer Desk · Detention Agent</b><div class="l">Coordinates shipper and consignee, and tracks, escalates and bills waiting time.</div></div>
+    <div class="card"><b>Compliance Agent · Fleet Analyst</b><div class="l">Keeps documents valid and answers "which truck is losing money?" from BigQuery, by voice.</div></div>
+  </div>
+  <h3>Built on Google</h3>
+  <p><span class="tag">Gemini</span><span class="tag">Vertex AI</span><span class="tag">Gemini Live (voice)</span><span class="tag">BigQuery + Data Agent</span><span class="tag">Cloud Run</span><span class="tag">Firestore</span><span class="tag">Google Maps</span><span class="tag">Antigravity</span><span class="tag">AI Studio</span></p>
+  <h3>Who it is for</h3>
+  <p>Beachhead: fleet owners with 2 to 20 trucks on the Rajasthan-Gujarat-NCR industrial corridors, plus the SME factories that ship with them (cement, marble, textiles, agro). That is the ~80% of operators who run fewer than 10 trucks<span class="sup">3</span>.</p>
+  <div class="note">Demo note: the prototype runs on a simulated fleet. Calls, bookings and third-party messages in the demo are simulated and labelled. Weather (Open-Meteo) and road routes (OSRM) are live.</div>
+  <div class="foot"><span>Saarthi AI · The problem in numbers</span><span>4</span></div>
+</section>
+
+<section class="page">
+  <div class="kicker">Sources</div>
+  <h2>References</h2>
+  <ol class="src">
+    <li>NITI Aayog &amp; RMI: trucks carry almost 70% of domestic freight demand. <a href="https://www.itln.in/road-transportation/trucking-industry-on-cusp-of-growthwith-challenges-1352135">itln.in</a>; NITI Aayog freight reports <a href="https://niti.gov.in/sites/default/files/2023-02/Freight_report.pdf">niti.gov.in/Freight_report.pdf</a>, <a href="https://www.niti.gov.in/sites/default/files/2021-06/FreightReportNationalLevel.pdf">FreightReportNationalLevel.pdf</a></li>
+    <li>NCAER, Logistics Cost Study for DPIIT (Sept 2025): 7.97% of GDP, ₹24.01 lakh crore (2023-24). <a href="https://ncaer.org/wp-content/uploads/2025/09/NCAER_Logistic_Study_Report_Sept2025.pdf">ncaer.org report</a>; PIB <a href="https://www.pib.gov.in/PressReleasePage.aspx?PRID=2168995">pib.gov.in PRID 2168995</a></li>
+    <li>ICCT (2024): about 80% of Indian trucking operators run fewer than 10 trucks (as cited in our application research).</li>
+    <li>KPMG India (Jan 2026), "Logistics costs to GDP: can Budget 2026 finally move the needle": 25-30% empty return legs, 10 mn+ trucks, 250-300 km/day. <a href="https://kpmg.com/in/en/blogs/2026/01/logistics-costs-to-gdp-can-budget-2026-finally-move-the-needle.html">kpmg.com</a></li>
+    <li>National Highways toll FY 2024-25: ₹61,408.15 crore, up from ₹55,882.12 crore in FY 2023-24. <a href="https://swarajyamag.com/amp/story/news-brief/toll-fee-collection-on-national-highways-crosses-rs-61400-crore-in-fy2024-25-averaging-rs-16824-crore-per-day">swarajyamag.com</a></li>
+    <li>FASTag share of NH toll collections above 98% under NETC. <a href="https://www.nbmcw.com/news/roads-highways/over-77-lakh-fastag-annual-passes-issued-nhai-expands-barrier-free-tolling.html">nbmcw.com</a></li>
+    <li>SaveLIFE Foundation, "Status of Truck Drivers in India" (Feb 2020), 1,217 drivers surveyed: about 50% drive when fatigued or sleepy; nearly 12 hours of driving a day. <a href="https://www.autocarpro.in/news-national/most-truck-drivers-in-india-are-sleep-deprived-compromise-road-safety-savelifeshardhitting-report-55710">autocarpro.in</a>, <a href="https://www.deccanherald.com/india/karnataka/bengaluru/many-hurdles-in-truckers-lives-810901.html">deccanherald.com</a></li>
+    <li>MoRTH, "Road Accidents in India 2023": 4,80,583 accidents, 1,72,890 deaths; trucks were the causing vehicle in 33,997 deaths. <a href="https://morth.nic.in/sites/default/files/Road-Accident-in-India-2023-Publications.pdf">morth.nic.in</a>, <a href="https://www.dtnext.in/news/national/172-lakh-people-died-in-480-lakh-road-accidents-in-2023-road-ministry-report-844831">dtnext.in</a></li>
+    <li>Union Minister Nitin Gadkari (Jan 2025): 75 drivers per 100 trucks, a shortage of 22 lakh drivers. <a href="https://www.autocarpro.in/news/project-abhay-vision-care-initiative-targets-road-safety-crisis-124656">autocarpro.in</a></li>
+  </ol>
+  <div class="note" style="margin-top:14px">Figures are taken from the cited reports and press coverage of them, as accessed in November 2026. Where sources disagreed, we used the official government figure.</div>
+  <div class="foot"><span>Saarthi AI · The problem in numbers</span><span>5</span></div>
+</section>
+</body></html>

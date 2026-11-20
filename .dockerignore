@@ -1,0 +1,7 @@
+.venv
+.env
+.env.*
+demo
+.claude
+__pycache__
+*.pyc

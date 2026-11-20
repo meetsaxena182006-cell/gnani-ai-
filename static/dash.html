@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="hi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+<title>Saarthi Dash</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&display=swap" rel="stylesheet">
+<style>
+:root{--eye:#22d3ee;--glow:rgba(34,211,238,.55);--bg:#04070d}
+body.alert{--eye:#fbbf24;--glow:rgba(251,191,36,.55)}
+body.sleepy{--eye:#fb923c;--glow:rgba(251,146,60,.55)}
+body.listening{--eye:#5eead4;--glow:rgba(94,234,212,.7)}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{background:radial-gradient(600px 400px at 50% 35%,#0a1a26,var(--bg));color:#e2e8f0;font-family:Inter,system-ui,sans-serif;
+  display:flex;flex-direction:column;align-items:center;justify-content:center;overflow:hidden;user-select:none}
+.screen{width:min(92vw,620px);aspect-ratio:16/9;border-radius:34px;background:#020409;border:2px solid #10202c;position:relative;
+  box-shadow:inset 0 0 60px rgba(0,0,0,.9),0 0 50px rgba(6,182,212,.12);display:grid;place-items:center;overflow:hidden}
+.screen::after{content:"";position:absolute;inset:0;background:repeating-linear-gradient(0deg,rgba(255,255,255,.025) 0 1px,transparent 1px 3px);pointer-events:none}
+.face{position:relative;width:70%;height:60%}
+.eye{position:absolute;top:18%;width:26%;height:54%;border-radius:28% / 24%;background:var(--eye);
+  box-shadow:0 0 28px var(--glow),0 0 70px var(--glow);transition:all .35s ease;animation:blink 5.5s infinite}
+.eye.l{left:12%}.eye.r{right:12%}
+.eye::after{content:"";position:absolute;width:24%;height:22%;top:16%;left:20%;border-radius:50%;background:rgba(255,255,255,.75)}
+@keyframes blink{0%,46%,50%,100%{transform:scaleY(1)}48%{transform:scaleY(.08)}}
+body.listening .eye{height:62%;top:14%}
+body.alert .eye.l{transform:rotate(-8deg);border-radius:20% 20% 40% 40%}
+body.alert .eye.r{transform:rotate(8deg);border-radius:20% 20% 40% 40%}
+body.alert .eye{animation:none}
+body.sleepy .eye{height:30%;top:34%;animation:none}
+.mouth{position:absolute;left:50%;bottom:4%;transform:translateX(-50%);width:22%;height:7%;border-radius:20px;background:var(--eye);
+  box-shadow:0 0 16px var(--glow);transition:.2s}
+body.talking .mouth{animation:talk .22s infinite alternate}
+@keyframes talk{from{height:5%;width:18%}to{height:16%;width:24%}}
+.ring{position:absolute;inset:-14px;border-radius:44px;border:2px solid var(--eye);opacity:0}
+body.listening .ring{animation:ring 1.2s infinite}
+@keyframes ring{0%{opacity:.7;transform:scale(.97)}100%{opacity:0;transform:scale(1.04)}}
+.badge{position:absolute;top:14px;left:18px;font:700 11px Inter;letter-spacing:2px;color:var(--eye);opacity:.85}
+.mood{position:absolute;top:14px;right:18px;font-size:18px}
+.say{max-width:min(92vw,620px);min-height:56px;margin-top:18px;text-align:center;font-size:19px;font-weight:600;line-height:1.4;color:#f1f5f9}
+.strip{display:flex;gap:10px;margin-top:16px;flex-wrap:wrap;justify-content:center}
+.pill{background:#0b1622;border:1px solid #16303f;border-radius:12px;padding:8px 12px;font-size:12px;color:#94a3b8}
+.pill b{color:#e2e8f0;display:block;font-size:14px}
+.ctrl{display:flex;gap:12px;margin-top:18px;align-items:center}
+.mic{width:76px;height:76px;border-radius:50%;border:0;background:linear-gradient(135deg,#0d9488,#0891b2);color:#fff;font-size:30px;
+  cursor:pointer;box-shadow:0 0 30px rgba(20,184,166,.45)}
+body.listening .mic{background:#e11d48}
+select,.sm{background:#0b1622;color:#cbd5e1;border:1px solid #16303f;border-radius:10px;padding:8px 10px;font:600 12px Inter}
+.note{margin-top:14px;font-size:11px;color:#475569}
+/* mini (picture-in-picture inside command center) */
+body.mini{justify-content:flex-start;padding:0;background:#020409}
+body.mini .screen{width:100%;height:68%;aspect-ratio:auto;border-radius:0;border:0}
+body.mini .say{font-size:11px;margin:4px 8px 0;min-height:0;font-weight:600;line-height:1.3;max-height:30%;overflow:hidden}
+body.mini .strip,body.mini .ctrl,body.mini .note{display:none}
+body.mini .badge{font-size:8px;top:7px;left:10px}
+body.mini .mood{font-size:12px;top:5px;right:10px}
+</style>
+</head>
+<body class="idle">
+<div class="screen"><div class="badge">SAARTHI DASH</div><div class="mood" id="mood"></div>
+  <div class="face"><div class="ring"></div><div class="eye l"></div><div class="eye r"></div><div class="mouth"></div></div></div>
+<div class="say" id="say">Namaste! Main Saarthi hoon. Bolne ke liye mic dabaiye.</div>
+<div class="strip">
+  <div class="pill">Truck<b id="pTruck">–</b></div><div class="pill">Trip<b id="pTrip">–</b></div>
+  <div class="pill">ETA<b id="pEta">–</b></div><div class="pill">Driven today<b id="pHrs">–</b></div>
+</div>
+<div class="ctrl"><select id="truck"></select><button class="mic" id="mic">🎙</button><button class="sm" id="mute">🔊 Voice on</button></div>
+<div class="note">Inspired-by-cinema dashboard companion · original Saarthi design · simulated demo fleet</div>
+<script>
+const q=new URLSearchParams(location.search), MINI=q.get("mini")==="1", FOLLOW=q.get("follow")==="1";
+if(MINI) document.body.classList.add("mini");
+const $=s=>document.querySelector(s); let truck=q.get("truck")||"RJ09GA4508", S=null, muted=MINI, moodT=null;
+function mood(m,ms){document.body.className=(MINI?"mini ":"")+m; $("#mood").textContent={alert:"⚠",sleepy:"☕",listening:"👂",talking:"",idle:""}[m]||"";
+  clearTimeout(moodT); if(ms) moodT=setTimeout(()=>mood("idle"),ms)}
+function speak(text,m){ $("#say").textContent=text; const dur=Math.min(9000,1800+text.length*55);
+  mood(m==="alert"||m==="sleepy"?m:"talking",dur);
+  if(muted||!window.speechSynthesis) return; speechSynthesis.cancel(); const u=new SpeechSynthesisUtterance(text);
+  u.lang="hi-IN"; const v=speechSynthesis.getVoices().find(v=>/hi[-_]IN/i.test(v.lang))||speechSynthesis.getVoices().find(v=>/en[-_]IN/i.test(v.lang));
+  if(v) u.voice=v; u.rate=1.0; u.onend=()=>mood("idle"); speechSynthesis.speak(u)}
+function pills(){ if(!S) return; const t=S.trucks.find(x=>x.id===truck); if(!t) return; const o=S.orders.find(x=>x.id===t.order);
+  $("#pTruck").textContent=t.id; $("#pTrip").textContent=o?`${o.from} → ${o.to}`:"Free"; $("#pEta").textContent=o?`${o.eta_h} h`:"–";
+  $("#pHrs").textContent=t.drive_hours+" h"}
+async function load(){ S=await (await fetch("/api/state")).json();
+  $("#truck").innerHTML=S.trucks.map(t=>`<option ${t.id===truck?"selected":""}>${t.id}</option>`).join(""); pills()}
+$("#truck").onchange=e=>{truck=e.target.value; pills()};
+$("#mute").onclick=()=>{muted=!muted; $("#mute").textContent=muted?"🔇 Voice off":"🔊 Voice on"};
+const es=new EventSource("/api/events");
+es.onmessage=m=>{const d=JSON.parse(m.data);
+  if(d.type==="state"){S={...S,...d}; pills(); return}
+  if(d.type!=="event") return;
+  if(d.agent==="dash"&&d.kind==="dash"){ if(FOLLOW) truck=d.truck; if(d.truck===truck){speak(d.text,d.data&&d.data.mood); pills()} }
+  else if(d.agent==="dash"&&d.kind==="alert"&&(FOLLOW||d.truck===truck)){ if(FOLLOW) truck=d.truck; mood("alert",4000); $("#say").textContent="⚠ "+d.text }
+  else if(d.kind==="reply"&&d.data&&d.data.role==="driver"&&d.data.truck===truck) speak(d.text) };
+const SR=window.SpeechRecognition||window.webkitSpeechRecognition; let rec=null;
+$("#mic").onclick=()=>{ if(!SR){$("#say").textContent="Voice input ke liye Chrome ya Edge chahiye.";return}
+  if(rec){rec.stop();return} rec=new SR(); rec.lang="hi-IN"; rec.interimResults=true; mood("listening");
+  rec.onresult=async e=>{const t=[...e.results].map(r=>r[0].transcript).join(""); $("#say").textContent="“"+t+"”";
+    if(e.results[e.results.length-1].isFinal){ mood("talking"); await fetch("/api/chat",{method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({text:t,role:"driver",truck})}) }};
+  rec.onend=()=>{rec=null; if(document.body.classList.contains("listening")) mood("idle")}; rec.start() };
+window.speechSynthesis&&speechSynthesis.getVoices();
+load();
+</script>
+</body>
+</html>
