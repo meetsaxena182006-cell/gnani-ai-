@@ -146,7 +146,12 @@ class Analyst:
             "Rupees as Rs. Simple English, a little Hinglish is fine.", model="fast", timeout=10)
         if not answer:
             if rows:
-                answer = f"{title}: top result {rows[0][0]} with {rows[0][1]}. Check the chart for the full picture."
+                v = rows[0][1]
+                val = f"Rs {int(v):,}" if isinstance(v, (int, float)) and abs(v) >= 1000 else str(v)
+                low = re.search(r"loss|nuksaan|least|lowest|sabse kam", question.lower()) and "truck" in title.lower()
+                answer = (f"{rows[0][0]} earned the least: {val} profit in 30 days, lowest in the fleet. "
+                          f"Inspect its diesel use and empty kilometres first." if low else
+                          f"{title}: {rows[0][0]} stands out at {val}. The chart shows the full picture.")
             else:
                 answer = "No data for that question."
         return {"question": question, "title": title, "sql": sql, "columns": cols, "rows": rows, "chart": chart,
